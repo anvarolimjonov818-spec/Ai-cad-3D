@@ -1,0 +1,22 @@
+{
+  "name": "ai-cad-3d-reconstructor",
+  "version": "1.0.0",
+  "description": "AI-Powered Photo & Video to 3D/CAD Model Generator",
+  "main": "app.js",
+  "scripts": {
+    "start": "python backend/main.py",
+    "test": "python -m unittest discover -s tests"
+  },
+  "keywords": [
+    "3d",
+    "cad",
+    "photogrammetry",
+    "threejs",
+    "stl",
+    "step",
+    "ai",
+    "reconstruction"
+  ],
+  "author": "Antigravity AI",
+  "license": "MIT"
+}
