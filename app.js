@@ -5,11 +5,15 @@ let boundingBoxMesh = null;
 let gridHelper = null;
 let clippingPlane = null;
 let isClippingActive = false;
-let currentMaterialType = 'metal';
+let currentMaterialType = 'photo'; 
 let isWireframe = false;
 let isGridVisible = true;
 let isAutoRotating = false;
-let currentPresetType = 'bracket';
+let currentPresetType = 'custom'; 
+
+// Photo Texture Storage
+let uploadedTexture = null;
+let uploadedDataUrl = null;
 
 // Standard PBR Material Definitions
 const materials = {
@@ -47,7 +51,7 @@ const materials = {
 document.addEventListener('DOMContentLoaded', () => {
     initThreeJS();
     setupEventListeners();
-    generateModel(); // Initial parametric model render
+    generateModel(); // Initial render
 });
 
 // Initialize Three.js Viewport
@@ -82,7 +86,7 @@ function initThreeJS() {
     controls.target.set(0, 25, 0);
 
     // Lighting Setup
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
     scene.add(ambientLight);
 
     const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -145,7 +149,7 @@ function validateInputs(length, width, height, hole) {
     }
 
     const minBase = Math.min(length, width);
-    if (hole >= minBase) {
+    if (hole > 0 && hole >= minBase) {
         errorText.textContent = `Teshik diametri (${hole}mm) detal o'lchamidan (${minBase}mm) kichik bo'lishi kerak.`;
         errorBanner.style.display = 'flex';
         return false;
@@ -155,12 +159,35 @@ function validateInputs(length, width, height, hole) {
     return true;
 }
 
+// Active Material Helper
+function getActiveMaterial() {
+    let mat;
+    if (currentMaterialType === 'photo' && uploadedTexture) {
+        mat = new THREE.MeshStandardMaterial({
+            map: uploadedTexture,
+            roughness: 0.3,
+            metalness: 0.05,
+            wireframe: isWireframe,
+            side: THREE.DoubleSide
+        });
+    } else {
+        const matKey = materials[currentMaterialType] ? currentMaterialType : 'metal';
+        mat = materials[matKey].clone();
+        mat.wireframe = isWireframe;
+    }
+
+    if (isClippingActive) {
+        mat.clippingPlanes = [clippingPlane];
+    }
+    return mat;
+}
+
 // Generate Parametric 3D Geometries
 function generateModel() {
     const length = parseFloat(document.getElementById('dim-length').value) || 120;
     const width = parseFloat(document.getElementById('dim-width').value) || 80;
     const height = parseFloat(document.getElementById('dim-height').value) || 50;
-    const holeDiameter = parseFloat(document.getElementById('dim-hole').value) || 25;
+    const holeDiameter = parseFloat(document.getElementById('dim-hole').value) || 0;
     const holeRadius = holeDiameter / 2;
 
     if (!validateInputs(length, width, height, holeDiameter)) {
@@ -177,6 +204,7 @@ function generateModel() {
     }
 
     let geometry;
+    const activeMat = getActiveMaterial();
 
     if (currentPresetType === 'bracket') {
         // Flanes / Kronshteyn Parametric Extrusion
@@ -231,7 +259,7 @@ function generateModel() {
         const teeth = 16;
         const outerR = Math.min(length, width) / 2;
         const innerR = outerR * 0.75;
-        const holeR = Math.min(holeRadius, innerR * 0.5);
+        const holeR = holeRadius > 0 ? Math.min(holeRadius, innerR * 0.5) : 0;
 
         const shape = new THREE.Shape();
         for (let i = 0; i < teeth; i++) {
@@ -266,36 +294,10 @@ function generateModel() {
         geometry.translate(0, height / 2, 0);
 
     } else {
-        // Combined Custom Mechanical Assembly
-        const group = new THREE.Group();
-        const baseGeo = new THREE.BoxGeometry(length, height * 0.4, width);
-        const baseMat = materials[currentMaterialType].clone();
-        baseMat.wireframe = isWireframe;
-        if (isClippingActive) baseMat.clippingPlanes = [clippingPlane];
-
-        const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-        baseMesh.position.y = (height * 0.4) / 2;
-        baseMesh.castShadow = true;
-        baseMesh.receiveShadow = true;
-
-        const topCylGeo = new THREE.CylinderGeometry(holeRadius * 1.5, holeRadius * 1.5, height * 0.6, 32);
-        const topCylMesh = new THREE.Mesh(topCylGeo, baseMat);
-        topCylMesh.position.y = (height * 0.4) + (height * 0.3);
-        topCylMesh.castShadow = true;
-
-        group.add(baseMesh);
-        group.add(topCylMesh);
-
-        currentMesh = group;
-        scene.add(currentMesh);
-        updateModelStats(length, width, height, 6420);
-        return;
+        // Custom 3D Box/Detail with Photo Texture Projection Mapping
+        geometry = new THREE.BoxGeometry(length, height, width);
+        geometry.translate(0, height / 2, 0);
     }
-
-    // Apply Active Material
-    const activeMat = materials[currentMaterialType].clone();
-    activeMat.wireframe = isWireframe;
-    if (isClippingActive) activeMat.clippingPlanes = [clippingPlane];
 
     currentMesh = new THREE.Mesh(geometry, activeMat);
     currentMesh.castShadow = true;
@@ -305,7 +307,7 @@ function generateModel() {
     // Compute Bounding Box & Stats
     geometry.computeBoundingBox();
     const bbox = geometry.boundingBox;
-    const polyCount = geometry.attributes.position.count;
+    const polyCount = geometry.attributes.position ? geometry.attributes.position.count : 1200;
     updateModelStats(length, width, height, polyCount);
 
     // Create 3D Dimension Box Marker
@@ -366,20 +368,7 @@ function setupEventListeners() {
             const target = e.currentTarget;
             target.classList.add('active');
             currentMaterialType = target.getAttribute('data-material');
-            
-            if (currentMesh) {
-                if (currentMesh.isGroup) {
-                    currentMesh.children.forEach(c => {
-                        c.material = materials[currentMaterialType].clone();
-                        c.material.wireframe = isWireframe;
-                        if (isClippingActive) c.material.clippingPlanes = [clippingPlane];
-                    });
-                } else {
-                    currentMesh.material = materials[currentMaterialType].clone();
-                    currentMesh.material.wireframe = isWireframe;
-                    if (isClippingActive) currentMesh.material.clippingPlanes = [clippingPlane];
-                }
-            }
+            generateModel();
         });
     });
 
@@ -413,13 +402,7 @@ function setupEventListeners() {
     document.getElementById('btn-toggle-wireframe').addEventListener('click', (e) => {
         isWireframe = !isWireframe;
         e.currentTarget.classList.toggle('active', isWireframe);
-        if (currentMesh) {
-            if (currentMesh.isGroup) {
-                currentMesh.children.forEach(c => c.material.wireframe = isWireframe);
-            } else {
-                currentMesh.material.wireframe = isWireframe;
-            }
-        }
+        generateModel();
     });
 
     document.getElementById('btn-toggle-grid').addEventListener('click', (e) => {
@@ -465,10 +448,13 @@ function setupEventListeners() {
     });
 }
 
+// Handle Photo/Video Upload & Texture Projection Mapping using FileReader DataURL
 function handleFileSelect() {
     const files = document.getElementById('file-input').files;
     const container = document.getElementById('media-preview-container');
     container.innerHTML = '';
+
+    let firstImageFile = null;
 
     Array.from(files).forEach((file, idx) => {
         const thumb = document.createElement('div');
@@ -477,12 +463,59 @@ function handleFileSelect() {
 
         if (file.type.startsWith('image/')) {
             thumb.innerHTML = `<img src="${url}" alt="Upload ${idx}">`;
+            if (!firstImageFile) firstImageFile = file;
         } else {
             thumb.innerHTML = `<video src="${url}" muted autoplay loop></video>`;
         }
 
         container.appendChild(thumb);
     });
+
+    if (firstImageFile) {
+        // Use FileReader to convert file to DataURL (CORS-proof & instant for Three.js)
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            uploadedDataUrl = e.target.result;
+            const loader = new THREE.TextureLoader();
+            loader.load(uploadedDataUrl, (texture) => {
+                uploadedTexture = texture;
+                uploadedTexture.wrapS = THREE.ClampToEdgeWrapping;
+                uploadedTexture.wrapT = THREE.ClampToEdgeWrapping;
+                uploadedTexture.needsUpdate = true;
+
+                // Read image natural aspect ratio & calculate 3D box dimensions
+                const img = new Image();
+                img.src = uploadedDataUrl;
+                img.onload = () => {
+                    const aspect = img.width / img.height;
+                    if (aspect >= 1) {
+                        document.getElementById('dim-length').value = Math.round(120 * aspect);
+                        document.getElementById('dim-width').value = 90;
+                        document.getElementById('dim-height').value = 50;
+                    } else {
+                        document.getElementById('dim-length').value = 90;
+                        document.getElementById('dim-width').value = Math.round(90 / aspect);
+                        document.getElementById('dim-height').value = 120;
+                    }
+
+                    // Switch preset to Box / Custom
+                    currentPresetType = 'custom';
+                    document.querySelectorAll('.btn-chip').forEach(b => {
+                        b.classList.toggle('active', b.getAttribute('data-type') === 'custom');
+                    });
+
+                    // Switch material to Photo Texture
+                    currentMaterialType = 'photo';
+                    document.querySelectorAll('.mat-btn').forEach(b => {
+                        b.classList.toggle('active', b.getAttribute('data-material') === 'photo');
+                    });
+
+                    generateModel();
+                };
+            });
+        };
+        reader.readAsDataURL(firstImageFile);
+    }
 
     if (files.length > 0) {
         runAISimulation();
@@ -496,13 +529,13 @@ function runAISimulation() {
     const statusText = document.getElementById('status-text');
 
     overlay.classList.add('active');
-    statusText.textContent = "AI Tahlil va 3D Mesh Yaratilmoqda...";
+    statusText.textContent = "AI Foto Tekstura va 3D Mesh Yaratilmoqda...";
 
     const steps = [
-        { progress: 20, text: "Fotogrammetriya va NeRF nurlar tahlil qilinmoqda..." },
-        { progress: 45, text: "Burchak va teshiklar parametri (CAD Snap) aniqlanmoqda..." },
-        { progress: 75, text: "Ko'rinmagan orqa yuzalar AI Infilling bilan tiklanmoqda..." },
-        { progress: 95, text: "3D Watertight STL poligon to'ri zichlashtirilmoqda..." },
+        { progress: 20, text: "Yuklangan rasmlardan obyekt konturlari ajratilmoqda..." },
+        { progress: 50, text: "Foto teksturasi 3D ob'ekt yuzalariga proyeksiyalanmoqda..." },
+        { progress: 75, text: "O'lcham nisbatlari foto proporsiyasiga moslashtirilmoqda..." },
+        { progress: 95, text: "3D Mesh va tekstura moslashuvi tekshirilmoqda..." },
         { progress: 100, text: "3D Model tayyor!" }
     ];
 
@@ -518,7 +551,7 @@ function runAISimulation() {
             setTimeout(() => {
                 overlay.classList.remove('active');
                 generateModel();
-                statusText.textContent = "3D Model Muvaffaqiyatli Yaratildi";
+                statusText.textContent = "3D Model Foto Teksturasi Bilan Yaratildi";
             }, 350);
         }
     }, 400);
@@ -530,14 +563,28 @@ function loadExampleDetail() {
     document.getElementById('dim-height').value = 45;
     document.getElementById('dim-hole').value = 30;
 
+    const demoImgUrl = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=500&auto=format&fit=crop&q=80";
+
     const container = document.getElementById('media-preview-container');
     container.innerHTML = `
         <div class="media-thumb">
-            <img src="https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=200&auto=format&fit=crop&q=80" alt="Mechanical part demo">
+            <img src="${demoImgUrl}" alt="Mechanical part demo">
         </div>
     `;
 
-    runAISimulation();
+    const loader = new THREE.TextureLoader();
+    loader.load(demoImgUrl, (texture) => {
+        uploadedTexture = texture;
+        currentMaterialType = 'photo';
+        currentPresetType = 'custom';
+        document.querySelectorAll('.mat-btn').forEach(b => {
+            b.classList.toggle('active', b.getAttribute('data-material') === 'photo');
+        });
+        document.querySelectorAll('.btn-chip').forEach(b => {
+            b.classList.toggle('active', b.getAttribute('data-type') === 'custom');
+        });
+        runAISimulation();
+    });
 }
 
 function exportModel(format) {
