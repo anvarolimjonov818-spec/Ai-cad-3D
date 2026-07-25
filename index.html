@@ -14,7 +14,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <style>
-        /* Modern Glassmorphism & Cyberpunk Styling */
         :root {
             --bg-dark: #0b0f19;
             --bg-card: rgba(22, 30, 49, 0.8);
@@ -69,9 +68,6 @@
         .media-preview-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
         .media-thumb { position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden; border: 1px solid var(--border-color); }
         .media-thumb img, .media-thumb video { width: 100%; height: 100%; object-fit: cover; }
-
-        .calibration-row { margin-bottom: 12px; }
-        .select-control { width: 100%; background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-color); color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-family: var(--font-main); outline: none; margin-top: 4px; }
 
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .input-group label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
@@ -286,7 +282,6 @@
                         <button class="mat-btn active" data-material="plastic"><i class="fa-solid fa-box"></i> Oq 3D Plastik (Solid)</button>
                         <button class="mat-btn" data-material="aluminum"><i class="fa-solid fa-cube"></i> Alyuminiy / Metal</button>
                         <button class="mat-btn" data-material="gold"><i class="fa-solid fa-gem"></i> Bronza / Jez</button>
-                        <button class="mat-btn" data-material="photo"><i class="fa-solid fa-image"></i> Foto Tekstura (Ixtiyoriy)</button>
                     </div>
                 </div>
             </section>
@@ -317,13 +312,13 @@
         </div>
     </div>
 
+    <!-- Embedded Pure 3D CAD Engine (Zero Photo Texture Mapping) -->
     <script>
         let scene, camera, renderer, controls;
         let currentMesh = null, boundingBoxMesh = null, gridHelper = null;
-        let currentMaterialType = 'plastic'; // Default to clean solid CAD plastic material (NO PHOTO)
+        let currentMaterialType = 'plastic'; // Absolute Pure Solid Material
         let isWireframe = false, isGridVisible = true, isAutoRotating = false;
         let currentPresetType = 'custom';
-        let uploadedTexture = null;
 
         const materials = {
             plastic: new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.25, metalness: 0.1, side: THREE.DoubleSide }),
@@ -389,16 +384,8 @@
         }
 
         function getActiveMaterial() {
-            if (currentMaterialType === 'photo' && uploadedTexture) {
-                return new THREE.MeshStandardMaterial({
-                    map: uploadedTexture,
-                    roughness: 0.3,
-                    metalness: 0.05,
-                    wireframe: isWireframe,
-                    side: THREE.DoubleSide
-                });
-            }
-            const mat = materials[currentMaterialType] ? materials[currentMaterialType].clone() : materials['plastic'].clone();
+            const matKey = materials[currentMaterialType] ? currentMaterialType : 'plastic';
+            const mat = materials[matKey].clone();
             mat.wireframe = isWireframe;
             return mat;
         }
@@ -436,7 +423,6 @@
                 geometry.rotateX(-Math.PI / 2);
                 geometry.center();
             } else {
-                // Solid Box 3D CAD Geometry (Pure Solid Model)
                 geometry = new THREE.BoxGeometry(length, height, width);
             }
 
@@ -555,7 +541,7 @@
                         document.getElementById('dim-length').value = Math.round(180 * aspect);
                         document.getElementById('dim-width').value = 50;
 
-                        // Default to clean solid CAD material (No photo on 3D faces!)
+                        // Default to clean solid CAD material (NO PHOTO)
                         currentMaterialType = 'plastic';
                         currentPresetType = 'custom';
                         document.querySelectorAll('.mat-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-material') === 'plastic'));
@@ -578,8 +564,8 @@
             statusText.textContent = "3D CAD Solid Model Yaratilmoqda...";
 
             const steps = [
-                { progress: 30, text: "Rasm konturidan mahsulot o'lchamlari va proporsiyasi tahlil qilinmoqda..." },
-                { progress: 70, text: "Sof 3D CAD Solid geometriyasi shakllantirilmoqda (Rasmsiz, toza solid model)..." },
+                { progress: 30, text: "Rasm konturidan mahsulot o'lchamlari tahlil qilinmoqda..." },
+                { progress: 70, text: "Sof 3D CAD Solid geometriyasi shakllantirilmoqda (Toza solid model)..." },
                 { progress: 100, text: "3D CAD Model Tayyor!" }
             ];
 
