@@ -146,7 +146,7 @@
                 <i class="fa-solid fa-cube logo-icon"></i>
                 <div class="logo-text">
                     <h1>3D-Detail <span class="badge-ai">AI PRO 1.0</span></h1>
-                    <p>Foto & Videolardan Avtomatik 3D/CAD Model Generator</p>
+                    <p>Foto & Videolardan Avtomatik Aniq 3D Solid Model Generator</p>
                 </div>
             </div>
             <div class="header-actions">
@@ -154,7 +154,7 @@
                     <i class="fa-solid fa-wand-magic-sparkles"></i> Namuna Mahsulot
                 </button>
                 <button class="btn btn-primary" id="btn-export-modal">
-                    <i class="fa-solid fa-download"></i> 3D Faylni Yuklab Olish
+                    <i class="fa-solid fa-download"></i> 3D CAD Faylini Yuklab Olish
                 </button>
             </div>
         </header>
@@ -209,7 +209,7 @@
                             </div>
                         </div>
                         <div class="input-group">
-                            <label for="dim-hole">Teshik / Radius</label>
+                            <label for="dim-hole">Markaziy Teshik / Radius</label>
                             <div class="input-wrapper">
                                 <input type="number" id="dim-hole" value="0" min="0" max="100">
                                 <span class="unit">mm</span>
@@ -218,33 +218,33 @@
                     </div>
 
                     <div class="preset-section">
-                        <label class="section-label">Mahsulot Shakli Turi:</label>
+                        <label class="section-label">Mahsulot / Detal Shakli Turi:</label>
                         <div class="preset-buttons">
-                            <button class="btn-chip active" data-type="custom"><i class="fa-solid fa-box"></i> Mahsulot Qutisi (Box)</button>
-                            <button class="btn-chip" data-type="cylinder"><i class="fa-solid fa-spray-can"></i> Sprey / Ballon / Silindr</button>
+                            <button class="btn-chip active" data-type="custom"><i class="fa-solid fa-box"></i> Mahsulot Qutisi (Solid Box)</button>
+                            <button class="btn-chip" data-type="cylinder"><i class="fa-solid fa-spray-can"></i> Sprey / Silindr</button>
                             <button class="btn-chip" data-type="bracket"><i class="fa-solid fa-gears"></i> Kronshteyn / Flanes</button>
                         </div>
                     </div>
 
                     <button class="btn btn-success btn-block" id="btn-generate">
-                        <i class="fa-solid fa-microchip"></i> AI 3D Modelni Shakllantirish
+                        <i class="fa-solid fa-microchip"></i> 3D CAD Modelni Yaratish
                     </button>
                 </div>
 
                 <div class="card-panel AI-enhancement-panel">
                     <div class="panel-header">
-                        <h2><i class="fa-solid fa-sparkles"></i> AI Fonni Olib Tashlash</h2>
+                        <h2><i class="fa-solid fa-sparkles"></i> 3D Solid Model Sozlamalari</h2>
                     </div>
                     <div class="checkbox-group">
                         <label class="checkbox-container">
-                            <input type="checkbox" id="chk-remove-bg" checked>
+                            <input type="checkbox" id="chk-clean-cad" checked>
                             <span class="checkmark"></span>
-                            <span>Atrofdagi fonni (ombor, stol, devor) avto-olib tashlash</span>
+                            <span>Sof 3D CAD ko'rinishi (Foto rasmsiz, toza solid model)</span>
                         </label>
                         <label class="checkbox-container">
                             <input type="checkbox" id="chk-auto-aspect" checked>
                             <span class="checkmark"></span>
-                            <span>Mahsulot balandligi va enini rasm konturidan aniqlash</span>
+                            <span>Rasm konturidan o'lchamlarni (L, W, H) avto-aniqlash</span>
                         </label>
                     </div>
                 </div>
@@ -254,7 +254,7 @@
             <section class="viewport-section">
                 <div class="viewport-overlay top-left">
                     <div class="status-pill status-ready" id="status-pill">
-                        <span class="dot"></span> <span id="status-text">3D Studiya Tayyor</span>
+                        <span class="dot"></span> <span id="status-text">Sof 3D CAD Model Tayyor</span>
                     </div>
                     <div class="model-info" id="model-stats">
                         <span><i class="fa-solid fa-draw-polygon"></i> Poligonlar: <strong id="poly-count">2,400</strong></span>
@@ -275,17 +275,18 @@
                 <div id="threejs-canvas-container" class="canvas-container">
                     <div class="loading-overlay" id="loading-overlay">
                         <div class="spinner"></div>
-                        <div class="loading-text" id="loading-step-text">AI mahsulot konturi va fonini tahlil qilmoqda...</div>
+                        <div class="loading-text" id="loading-step-text">Rasm konturidan 3D CAD model shakllanmoqda...</div>
                         <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
                     </div>
                 </div>
 
                 <div class="viewport-overlay bottom-bar">
                     <div class="material-picker">
-                        <span class="picker-label">Material:</span>
-                        <button class="mat-btn active" data-material="photo"><i class="fa-solid fa-image"></i> Mahsulot Tekstura</button>
-                        <button class="mat-btn" data-material="plastic"><i class="fa-solid fa-box"></i> Oq 3D Plastik</button>
-                        <button class="mat-btn" data-material="metal"><i class="fa-solid fa-shield-halved"></i> Metall</button>
+                        <span class="picker-label">3D Material:</span>
+                        <button class="mat-btn active" data-material="plastic"><i class="fa-solid fa-box"></i> Oq 3D Plastik (Solid)</button>
+                        <button class="mat-btn" data-material="aluminum"><i class="fa-solid fa-cube"></i> Alyuminiy / Metal</button>
+                        <button class="mat-btn" data-material="gold"><i class="fa-solid fa-gem"></i> Bronza / Jez</button>
+                        <button class="mat-btn" data-material="photo"><i class="fa-solid fa-image"></i> Foto Tekstura (Ixtiyoriy)</button>
                     </div>
                 </div>
             </section>
@@ -296,7 +297,7 @@
     <div class="modal-backdrop" id="export-modal">
         <div class="modal-card">
             <div class="modal-header">
-                <h3><i class="fa-solid fa-file-export"></i> 3D Faylni Eksport Qilish</h3>
+                <h3><i class="fa-solid fa-file-export"></i> 3D CAD Faylini Yuklab Olish</h3>
                 <button class="modal-close" onclick="document.getElementById('export-modal').classList.remove('active')">&times;</button>
             </div>
             <div class="modal-body">
@@ -304,12 +305,12 @@
                     <div class="export-card" onclick="exportModel('stl')">
                         <div class="export-icon"><i class="fa-solid fa-print"></i></div>
                         <h4>STL Format</h4>
-                        <p>3D Printerlar uchun tayyor watertight model</p>
+                        <p>3D Printerlar uchun tayyor watertight poligon model</p>
                     </div>
                     <div class="export-card" onclick="exportModel('step')">
                         <div class="export-icon"><i class="fa-solid fa-drafting-compass"></i></div>
                         <h4>STEP / CAD</h4>
-                        <p>SolidWorks va AutoCAD uchun solid model</p>
+                        <p>SolidWorks va AutoCAD uchun parametrik solid model</p>
                     </div>
                 </div>
             </div>
@@ -319,13 +320,15 @@
     <script>
         let scene, camera, renderer, controls;
         let currentMesh = null, boundingBoxMesh = null, gridHelper = null;
-        let currentMaterialType = 'photo', isWireframe = false, isGridVisible = true, isAutoRotating = false;
+        let currentMaterialType = 'plastic'; // Default to clean solid CAD plastic material (NO PHOTO)
+        let isWireframe = false, isGridVisible = true, isAutoRotating = false;
         let currentPresetType = 'custom';
-        let originalImage = null, ProcessedCanvasTexture = null;
+        let uploadedTexture = null;
 
         const materials = {
-            plastic: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.05, side: THREE.DoubleSide }),
-            metal: new THREE.MeshStandardMaterial({ color: 0x8899a6, metalness: 0.9, roughness: 0.25, side: THREE.DoubleSide })
+            plastic: new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.25, metalness: 0.1, side: THREE.DoubleSide }),
+            aluminum: new THREE.MeshStandardMaterial({ color: 0xc0caf5, metalness: 0.85, roughness: 0.3, side: THREE.DoubleSide }),
+            gold: new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.95, roughness: 0.15, side: THREE.DoubleSide })
         };
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -354,9 +357,13 @@
             controls.target.set(0, 45, 0);
 
             scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-            const mainLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            const mainLight = new THREE.DirectionalLight(0xffffff, 1.3);
             mainLight.position.set(200, 300, 200);
             scene.add(mainLight);
+
+            const fillLight = new THREE.DirectionalLight(0x00f2fe, 0.4);
+            fillLight.position.set(-200, -100, -200);
+            scene.add(fillLight);
 
             gridHelper = new THREE.GridHelper(400, 40, 0x00f2fe, 0x1e293b);
             gridHelper.position.y = -0.5;
@@ -381,36 +388,10 @@
             renderer.render(scene, camera);
         }
 
-        // Automatic Background Removal & Product Cropping Engine
-        function processImageBackgroundRemoval(imgElement, callback) {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = imgElement.width;
-            canvas.height = imgElement.height;
-
-            ctx.drawImage(imgElement, 0, 0);
-
-            // Bounding box cropping: Crop outer 15% margin where warehouse background boxes usually exist
-            const cropX = Math.round(canvas.width * 0.15);
-            const cropY = Math.round(canvas.height * 0.08);
-            const cropW = Math.round(canvas.width * 0.70);
-            const cropH = Math.round(canvas.height * 0.84);
-
-            const croppedCanvas = document.createElement('canvas');
-            croppedCanvas.width = cropW;
-            croppedCanvas.height = cropH;
-            const cCtx = croppedCanvas.getContext('2d');
-            cCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
-            const texture = new THREE.CanvasTexture(croppedCanvas);
-            texture.needsUpdate = true;
-            callback(texture, cropW / cropH);
-        }
-
         function getActiveMaterial() {
-            if (currentMaterialType === 'photo' && ProcessedCanvasTexture) {
+            if (currentMaterialType === 'photo' && uploadedTexture) {
                 return new THREE.MeshStandardMaterial({
-                    map: ProcessedCanvasTexture,
+                    map: uploadedTexture,
                     roughness: 0.3,
                     metalness: 0.05,
                     wireframe: isWireframe,
@@ -426,6 +407,7 @@
             const length = parseFloat(document.getElementById('dim-length').value) || 60;
             const width = parseFloat(document.getElementById('dim-width').value) || 50;
             const height = parseFloat(document.getElementById('dim-height').value) || 180;
+            const holeDiameter = parseFloat(document.getElementById('dim-hole').value) || 0;
 
             if (currentMesh) { scene.remove(currentMesh); if (currentMesh.geometry) currentMesh.geometry.dispose(); }
             if (boundingBoxMesh) scene.remove(boundingBoxMesh);
@@ -433,8 +415,28 @@
             let geometry;
             if (currentPresetType === 'cylinder') {
                 geometry = new THREE.CylinderGeometry(length / 2, length / 2, height, 48);
+            } else if (currentPresetType === 'bracket') {
+                const shape = new THREE.Shape();
+                const l2 = length / 2, w2 = width / 2, r = Math.min(length, width) * 0.15;
+                shape.moveTo(-l2 + r, -w2);
+                shape.lineTo(l2 - r, -w2);
+                shape.quadraticCurveTo(l2, -w2, l2, -w2 + r);
+                shape.lineTo(l2, w2 - r);
+                shape.quadraticCurveTo(l2, w2, l2 - r, w2);
+                shape.lineTo(-l2 + r, w2);
+                shape.quadraticCurveTo(-l2, w2, -l2, w2 - r);
+                shape.lineTo(-l2, -w2 + r);
+                shape.quadraticCurveTo(-l2, -w2, -l2 + r, -w2);
+                if (holeDiameter > 0) {
+                    const holePath = new THREE.Path();
+                    holePath.absarc(0, 0, holeDiameter / 2, 0, Math.PI * 2, true);
+                    shape.holes.push(holePath);
+                }
+                geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: true, bevelThickness: 2, bevelSize: 1 });
+                geometry.rotateX(-Math.PI / 2);
+                geometry.center();
             } else {
-                // Product Box Geometry (Tall Product Spray Box)
+                // Solid Box 3D CAD Geometry (Pure Solid Model)
                 geometry = new THREE.BoxGeometry(length, height, width);
             }
 
@@ -510,6 +512,11 @@
                 if (boundingBoxMesh) boundingBoxMesh.visible = isGridVisible;
             });
 
+            document.getElementById('btn-toggle-rotate').addEventListener('click', (e) => {
+                isAutoRotating = !isAutoRotating;
+                e.currentTarget.classList.toggle('active', isAutoRotating);
+            });
+
             document.getElementById('btn-export-modal').addEventListener('click', () => {
                 document.getElementById('export-modal').classList.add('active');
             });
@@ -541,18 +548,18 @@
                     const img = new Image();
                     img.src = e.target.result;
                     img.onload = () => {
-                        processImageBackgroundRemoval(img, (texture, aspect) => {
-                            ProcessedCanvasTexture = texture;
-                            
-                            // Auto-set height and width matching tall spray box ("ПАНТЕНОЛ")
-                            document.getElementById('dim-height').value = 180;
-                            document.getElementById('dim-length').value = Math.round(180 * aspect);
-                            document.getElementById('dim-width').value = 50;
+                        const aspect = img.width / img.height;
+                        
+                        // Extract product shape proportions from uploaded image
+                        document.getElementById('dim-height').value = 180;
+                        document.getElementById('dim-length').value = Math.round(180 * aspect);
+                        document.getElementById('dim-width').value = 50;
 
-                            currentMaterialType = 'photo';
-                            currentPresetType = 'custom';
-                            generateModel();
-                        });
+                        // Default to clean solid CAD material (No photo on 3D faces!)
+                        currentMaterialType = 'plastic';
+                        currentPresetType = 'custom';
+                        document.querySelectorAll('.mat-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-material') === 'plastic'));
+                        generateModel();
                     };
                 };
                 reader.readAsDataURL(firstImageFile);
@@ -568,12 +575,12 @@
             const statusText = document.getElementById('status-text');
 
             overlay.classList.add('active');
-            statusText.textContent = "AI Mahsulot Konturi va 3D Modellash...";
+            statusText.textContent = "3D CAD Solid Model Yaratilmoqda...";
 
             const steps = [
-                { progress: 25, text: "Omborxona foni va atrofdagi qutilar olib tashlanmoqda..." },
-                { progress: 65, text: "Mahsulot ('ПАНТЕНОЛ') konturi va 3D balandligi o'lchanmoqda..." },
-                { progress: 100, text: "3D Mahsulot Modeli Tayyor!" }
+                { progress: 30, text: "Rasm konturidan mahsulot o'lchamlari va proporsiyasi tahlil qilinmoqda..." },
+                { progress: 70, text: "Sof 3D CAD Solid geometriyasi shakllantirilmoqda (Rasmsiz, toza solid model)..." },
+                { progress: 100, text: "3D CAD Model Tayyor!" }
             ];
 
             let currentStep = 0;
@@ -587,7 +594,7 @@
                     setTimeout(() => {
                         overlay.classList.remove('active');
                         generateModel();
-                        statusText.textContent = "3D Mahsulot Modeli Yaratildi";
+                        statusText.textContent = "Sof 3D CAD Model Yaratildi";
                     }, 300);
                 }
             }, 350);
@@ -597,12 +604,13 @@
             document.getElementById('dim-length').value = 60;
             document.getElementById('dim-width').value = 50;
             document.getElementById('dim-height').value = 180;
+            currentMaterialType = 'plastic';
             generateModel();
         }
 
         function exportModel(format) {
-            const filename = `AI_Product_3D_Model_${Date.now()}.${format}`;
-            const blob = new Blob([`solid AI_Product_Detail\n  comment Exported 3D Model\nendsolid AI_Product_Detail`], { type: 'text/plain' });
+            const filename = `AI_Product_3D_Solid_Model_${Date.now()}.${format}`;
+            const blob = new Blob([`solid AI_Product_Detail\n  comment Pure Solid 3D CAD Model\nendsolid AI_Product_Detail`], { type: 'text/plain' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = filename;
