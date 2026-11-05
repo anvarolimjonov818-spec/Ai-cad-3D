@@ -57,3 +57,30 @@ test('errors become clear Uzbek messages', async () => {
     await assert.rejects(Gm.analyze({ key: 'k', model: 'm', file: { mimeType: 'image/png', base64: 'x' }, prompt: 'p',
         fetchFn: fakeFetch(() => ({ body: { candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '{' }] } }] } })) }), /kesilib/);
 });
+
+test('analyzeResilient retries a busy model, then falls back to the next one', async () => {
+    const answers = { 'gemini-a': [503, 503, 503], 'gemini-b': [200] };
+    const seen = [];
+    const f = fakeFetch(url => {
+        const model = /models\/([^:]+):/.exec(url)[1];
+        seen.push(model);
+        const status = answers[model].shift();
+        return status === 200
+            ? { body: { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"ok":1}' }] } }] } }
+            : { status, body: { error: { message: 'This model is currently experiencing high demand.' } } };
+    });
+    const status = [];
+    const r = await Gm.analyzeResilient({ key: 'k', model: 'gemini-a', models: ['gemini-a', 'gemini-b'], file: { mimeType: 'image/png', base64: 'x' },
+        prompt: 'p', fetchFn: f, retryDelays: [1, 1], onStatus: m => status.push(m) });
+    assert.deepEqual(seen, ['gemini-a', 'gemini-a', 'gemini-a', 'gemini-b']);
+    assert.equal(r.model, 'gemini-b');
+    assert.equal(r.text, '{"ok":1}');
+    assert.ok(status.some(m => /qayta urinilmoqda/.test(m)) && status.some(m => /boshqa modelga/.test(m)));
+});
+
+test('analyzeResilient does not retry a bad key', async () => {
+    let calls = 0;
+    const f = fakeFetch(() => { calls++; return { status: 400, body: { error: { message: 'API key not valid' } } }; });
+    await assert.rejects(Gm.analyzeResilient({ key: 'k', model: 'a', models: ['a', 'b'], file: { mimeType: 'image/png', base64: 'x' }, prompt: 'p', fetchFn: f, retryDelays: [1] }), /kalit/);
+    assert.equal(calls, 1);
+});
