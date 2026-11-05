@@ -5,7 +5,10 @@ Rasm, video va real o'lchamlardan 3D printga tayyor (watertight) va CAD uchun mo
 ## Imkoniyatlar
 
 - **Parametrik shakllar:** sprey/ballon, quti (yumaloq burchakli), flanes (markaziy teshikli), vtulka/quvur.
-- **Texnik chizmadan 3D (AI):** chizma rasmi yoki PDF Claude'ga (`claude-opus-5-5`) yuboriladi. U ko'rinishlar va o'lchamlarni o'qib, aylanma jism (val, vtulka, disk) yoki teshikli plastina modelini qaytaradi. Server natijani haqiqiy solid sifatida yasab tekshiradi. O'qilgan o'lchamlar va qilingan taxminlar (masalan, rezba yoki faska tushirib qoldirilgani) ekranda ko'rsatiladi. Buning uchun serverda `ANTHROPIC_API_KEY` bo'lishi kerak.
+- **Texnik chizmadan 3D (AI), ikki usulda:**
+  - **Bepul (claude.ai):** sayt tayyor prompt beradi. Chizmani shu prompt bilan claude.ai'ga yuklaysiz, Claude qaytargan JSON'ni saytga qo'yasiz va model yasaladi. API kalit ham, server ham kerak emas, GitHub Pages'da ham ishlaydi.
+  - **Avtomatik (API):** chizma serverdan to'g'ridan-to'g'ri Claude API'ga (`claude-opus-5-5`) yuboriladi. Serverda `ANTHROPIC_API_KEY` bo'lishi kerak, har bir tahlil pullik.
+  - Ikkala usulda ham aylanma jism (val, vtulka, disk) yoki teshikli plastina yasaladi. Javob tekshiriladi: o'zini kesib o'tgan kontur yoki kontur tashqarisidagi teshik bo'lsa, ogohlantirish chiqadi. O'qilgan o'lchamlar va qilingan taxminlar ekranda ko'rsatiladi.
 - **Rasmdan kontur:** obyekt fondan brauzerning o'zida ajratiladi (fon rangi, eng katta bog'langan soha, ichki teshiklarni to'ldirish). Kontur aylantiriladi (idish, vtulka) yoki cho'ziladi (plastina, profil). Kalibrovka H va L orqali qilinadi. Videoda o'rtadagi kadr olinadi.
 - **O'lcham tekshiruvi:** teshik detaldan katta bo'lsa yoki devor 1.2 mm dan yupqa bo'lsa, model yasalmaydi va xato ko'rsatiladi.
 - **3D print tekshiruvi:** ochiq, non-manifold va teskari yo'nalgan qirralar soni, normallar yo'nalishi, hajm, sirt yuzasi va materialga qarab vazn.
@@ -48,6 +51,7 @@ npm test
 | `js/mesher.js` | spec → Three.js geometriya |
 | `js/app.js` | UI, viewer, eksport |
 | `backend/cad.py` | spec → CadQuery solid → STEP |
+| `js/drawing.js` | bepul usul: prompt, Claude javobini o'qish va tekshirish |
 | `backend/drawing.py` | chizma → Claude vision (structured output) → spec |
 | `backend/mesh.py` | trimesh tekshiruvi va tuzatish |
 | `backend/main.py` | FastAPI server |

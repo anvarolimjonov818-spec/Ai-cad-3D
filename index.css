@@ -119,6 +119,14 @@ body { font-family: var(--font-main); background-color: var(--bg-dark); color: v
 
 /* ---- v2 additions ---- */
 .note-input { width: 100%; margin-top: 10px; background: rgba(0,0,0,0.3); color: #fff; border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 8px; font-family: var(--font-main); font-size: 12px; resize: vertical; }
+.tabs { display: flex; gap: 4px; background: rgba(0,0,0,0.3); padding: 3px; border-radius: 8px; border: 1px solid var(--border-color); }
+.tab { flex: 1; background: transparent; border: none; color: var(--text-secondary); padding: 6px 8px; border-radius: 6px; font-family: var(--font-main); font-size: 12px; cursor: pointer; }
+.tab.active { background: rgba(0, 242, 254, 0.15); color: var(--accent-cyan); }
+.steps { margin: 10px 0 0 18px; display: flex; flex-direction: column; gap: 8px; font-size: 11px; color: var(--text-secondary); }
+.steps .btn { text-decoration: none; }
+.step-text { display: block; margin-top: 4px; }
+.answer-input { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; }
+#drawing-api .upload-zone { margin-top: 10px; }
 .drawing-result { margin-top: 10px; font-size: 12px; display: flex; flex-direction: column; gap: 8px; }
 .drawing-result h4 { font-size: 12px; color: var(--accent-cyan); }
 .drawing-result ul { padding-left: 16px; color: var(--text-secondary); line-height: 1.5; }

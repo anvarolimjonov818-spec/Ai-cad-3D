@@ -3,6 +3,7 @@
     'use strict';
 
     const G = window.CadGeo;
+    const D = window.CadDrawing;
     const M = window.CadMesher;
     const $ = id => document.getElementById(id);
 
@@ -543,18 +544,56 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || res.statusText);
-            state.drawing = data;
-            renderDrawingResult(data.analysis);
-            const chip = $$('.btn-chip[data-type="drawing"]')[0];
-            chip.classList.remove('hidden');
-            selectPreset('drawing', true);
-            toast('3D model chizma asosida yaratildi');
+            useDrawing(data, []);
         } catch (err) {
             console.error(err);
             toast('Chizma tahlili: ' + err.message, true);
         } finally {
             busy(false);
         }
+    }
+
+    function useDrawing(data, warnings) {
+        state.drawing = data;
+        renderDrawingResult(data.analysis);
+        renderMessages($('drawing-messages'), (warnings || []).map(w => ['warn', w]));
+        $$('.btn-chip[data-type="drawing"]')[0].classList.remove('hidden');
+        selectPreset('drawing', true);
+        if (state.report && !state.report.watertight) toast("Model yopiq chiqmadi — Claude'dan geometriyani qayta tekshirishni so'rang", true);
+        else toast('3D model chizma asosida yaratildi');
+    }
+
+    async function copyPrompt() {
+        const text = D.buildPrompt($('drawing-note').value);
+        try {
+            await navigator.clipboard.writeText(text);
+            toast("Prompt nusxalandi — endi claude.ai'da chizma bilan birga yuboring");
+        } catch (e) {
+            // clipboard blocked (http, old browser): show the text so it can be copied by hand
+            const fb = $('prompt-fallback');
+            fb.value = text;
+            fb.classList.remove('hidden');
+            fb.classList.add('note-input');
+            fb.rows = 6;
+            fb.focus();
+            fb.select();
+            toast("Avtomatik nusxalab bo'lmadi — belgilangan matnni Ctrl+C bilan nusxalang", true);
+        }
+    }
+
+    function buildFromAnswer() {
+        try {
+            const { spec, analysis, warnings } = D.parseAnswer($('drawing-answer').value);
+            useDrawing({ spec, analysis }, warnings);
+        } catch (err) {
+            renderMessages($('drawing-messages'), [['error', err.message]]);
+        }
+    }
+
+    function setDrawingMode(mode) {
+        $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+        $('drawing-free').classList.toggle('hidden', mode !== 'free');
+        $('drawing-api').classList.toggle('hidden', mode !== 'api');
     }
 
     function renderDrawingResult(a) {
@@ -699,6 +738,9 @@
         dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
         dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); pickDrawing(e.dataTransfer.files[0]); });
         $('btn-analyze-drawing').addEventListener('click', analyzeDrawing);
+        $('btn-copy-prompt').addEventListener('click', copyPrompt);
+        $('btn-build-answer').addEventListener('click', buildFromAnswer);
+        $$('.tab').forEach(t => t.addEventListener('click', () => setDrawingMode(t.dataset.mode)));
         $('btn-server-check').addEventListener('click', serverCheck);
 
         $('btn-example-load').addEventListener('click', () => {
