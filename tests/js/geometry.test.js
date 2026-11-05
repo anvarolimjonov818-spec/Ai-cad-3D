@@ -141,3 +141,13 @@ test('contour extraction finds the silhouette and builds closed revolve/extrude 
 test('contour extraction returns null for an empty image', () => {
     assert.equal(G.extractContour(syntheticImage(50, 50, () => false)), null);
 });
+
+test('looksLikeDrawing tells line drawings from object photos', () => {
+    // white sheet with thin black lines (a drawing)
+    const drawing = syntheticImage(200, 200, (x, y) => x % 40 === 0 || y % 50 === 0 || (x > 60 && x < 140 && (y === 60 || y === 140)));
+    for (let i = 0; i < drawing.data.length; i += 4) if (drawing.data[i] === 30) { drawing.data[i] = drawing.data[i + 1] = drawing.data[i + 2] = 10; }
+    assert.equal(G.looksLikeDrawing(drawing), true);
+    // big dark object on a light background (a photo)
+    const photo = syntheticImage(200, 200, (x, y) => x > 50 && x < 150 && y > 20 && y < 190);
+    assert.equal(G.looksLikeDrawing(photo), false);
+});

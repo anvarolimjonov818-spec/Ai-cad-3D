@@ -212,6 +212,24 @@
         return { width: w, height: h, mask, rows, bbox, background: bg };
     }
 
+    /**
+     * Heuristic: does this image look like a technical drawing (line art on a
+     * white sheet) rather than a photo of an object? Drawings are mostly light
+     * paper with a small share of thin dark lines; object photos have a large
+     * dark/coloured area.
+     */
+    function looksLikeDrawing(img) {
+        const { data } = img;
+        const n = data.length / 4;
+        let light = 0, dark = 0;
+        for (let i = 0; i < data.length; i += 4) {
+            const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            if (lum > 170) light++;
+            else if (lum < 110) dark++;
+        }
+        return light / n > 0.55 && dark / n > 0.005 && dark / n < 0.2;
+    }
+
     /** Resample contour rows to `samples` evenly spaced, lightly smoothed rows (bottom → top). */
     function sampleRows(contour, samples) {
         samples = samples || 64;
@@ -551,7 +569,7 @@
     return {
         MIN_WALL, PRESETS,
         buildSpec, validate, roundedRect, bottleProfile,
-        extractContour, profileFromContour, outlineFromContour,
+        extractContour, looksLikeDrawing, profileFromContour, outlineFromContour,
         weld, analyzeMesh, repairMesh, signedVolume,
         toBinarySTL, toOBJ, toZUp, parseSTL
     };
