@@ -5,8 +5,9 @@ Rasm, video va real o'lchamlardan 3D printga tayyor (watertight) va CAD uchun mo
 ## Imkoniyatlar
 
 - **Parametrik shakllar:** sprey/ballon, quti (yumaloq burchakli), flanes (markaziy teshikli), vtulka/quvur.
-- **Texnik chizmadan 3D (AI), ikki usulda:**
-  - **Bepul (claude.ai):** sayt tayyor prompt beradi. Chizmani shu prompt bilan claude.ai'ga yuklaysiz, Claude qaytargan JSON'ni saytga qo'yasiz va model yasaladi. API kalit ham, server ham kerak emas, GitHub Pages'da ham ishlaydi.
+- **Texnik chizmadan 3D (AI), uch usulda:**
+  - **Gemini (avtomatik, bepul):** aistudio.google.com/apikey saytidan olingan bepul Gemini API kalitini saytga kiritasiz va chizmani yuklaysiz, model o'zi chiqadi. Kalit faqat sizning brauzeringizda saqlanadi va faqat Google'ga yuboriladi. Bepul tarifda kunlik limit bor.
+  - **Qo'lda (chat, bepul):** gemini.google.com yoki claude.ai orqali. sayt tayyor prompt beradi. Chizmani shu prompt bilan claude.ai'ga yuklaysiz, Claude qaytargan JSON'ni saytga qo'yasiz va model yasaladi. API kalit ham, server ham kerak emas, GitHub Pages'da ham ishlaydi.
   - **Avtomatik (API):** chizma serverdan to'g'ridan-to'g'ri Claude API'ga (`claude-opus-5-5`) yuboriladi. Serverda `ANTHROPIC_API_KEY` bo'lishi kerak, har bir tahlil pullik.
   - Detal qismlardan yig'iladi: prizma (istalgan kontur), silindr, muntazam ko'pburchak (olti qirra, kvadrat), aylanalar qobig'i (kalit dastasi, quloqcha) va aylanma jism. Ular X, Y yoki Z o'qi bo'ylab qo'shiladi yoki kesib olinadi. Shu tariqa ariqlar, qiya kesimlar, olti qirrali va kvadrat teshiklar yasaladi. Brauzerda [Manifold](https://github.com/elalish/manifold) kutubxonasi ishlaydi va natija har doim yopiq (watertight) chiqadi. STEP fayl CadQuery'da xuddi shu qismlardan aniq yasaladi.
   - `tests/fixtures/drawings.json` faylida uchta haqiqiy chizmaning modeli bor (silindrli blok, gayka kaliti, vtulkali asos). Ularning hajmi qo'lda hisoblangan qiymat bilan solishtiriladi. Javob tekshiriladi: o'zini kesib o'tgan kontur yoki kontur tashqarisidagi teshik bo'lsa, ogohlantirish chiqadi. O'qilgan o'lchamlar va qilingan taxminlar ekranda ko'rsatiladi.
@@ -53,6 +54,7 @@ npm test
 | `js/app.js` | UI, viewer, eksport |
 | `backend/cad.py` | spec → CadQuery solid → STEP |
 | `js/csg.js` | qismlardan yig'iladigan detal ("csg" spec) → Manifold |
+| `js/gemini.js` | Gemini API mijozi (brauzerda, foydalanuvchi kaliti bilan) |
 | `js/drawing.js` | bepul usul: prompt, Claude javobini o'qish va tekshirish |
 | `backend/drawing.py` | chizma → Claude vision (structured output) → spec |
 | `backend/mesh.py` | trimesh tekshiruvi va tuzatish |

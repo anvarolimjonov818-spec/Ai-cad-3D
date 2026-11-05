@@ -584,6 +584,7 @@
             ? "Chizma tahlili uchun server kerak: ANTHROPIC_API_KEY bilan `python backend/main.py` ni ishga tushiring."
             : drawingReady ? "Chizma Claude'ga (Anthropic API) yuboriladi va tahlil qilinadi."
             : "Serverda ANTHROPIC_API_KEY o'rnatilmagan — chizma tahlili o'chirilgan.";
+        $('tab-server').classList.toggle('hidden', !drawingReady);
     }
 
     // ------------------------------------------------------- drawing → 3D
@@ -595,6 +596,72 @@
         state.drawingFile = file;
         $('drawing-file-name').textContent = '📄 ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)';
         $('btn-analyze-drawing').disabled = !(state.api && state.api.drawing);
+        updateGeminiButton();
+    }
+
+    // ------------------------------------------- Gemini (free, automatic)
+
+    const GEMINI_KEY = 'aicad.gemini.key', GEMINI_MODEL = 'aicad.gemini.model';
+    const store = {
+        get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
+        set(k, v) {
+            try {
+                if (v) localStorage.setItem(k, v);
+                else localStorage.removeItem(k);
+            } catch (e) { /* storage blocked */ }
+        }
+    };
+
+    function updateGeminiButton() {
+        $('btn-gemini').disabled = !($('gemini-key').value.trim() && $('gemini-model').value && state.drawingFile);
+    }
+
+    async function checkGeminiKey(silent) {
+        const key = $('gemini-key').value.trim();
+        if (!key) { if (!silent) toast('Avval Gemini API kalitini kiriting', true); return; }
+        const btn = $('btn-gemini-check');
+        btn.disabled = true;
+        btn.textContent = '...';
+        try {
+            const models = await window.CadGemini.listModels(key);
+            const sel = $('gemini-model');
+            const saved = store.get(GEMINI_MODEL);
+            sel.innerHTML = models.map(m => `<option value="${m.id}">${m.label.replace(/</g, '&lt;')} (${m.id})</option>`).join('');
+            if (saved && models.some(m => m.id === saved)) sel.value = saved;
+            store.set(GEMINI_KEY, $('gemini-remember').checked ? key : '');
+            renderMessages($('drawing-messages'), []);
+            if (!silent) toast(`Kalit ishlayapti — ${models.length} ta model topildi`);
+            $('gemini-status').textContent = 'Tanlangan model: ' + sel.value + '. Bepul tarifda kunlik limit bor; tugasa boshqa Flash modelni tanlang.';
+        } catch (err) {
+            renderMessages($('drawing-messages'), [['error', err.message]]);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Tekshirish';
+            updateGeminiButton();
+        }
+    }
+
+    async function runGemini() {
+        const key = $('gemini-key').value.trim(), model = $('gemini-model').value;
+        if (!state.drawingFile) { toast('Avval chizmani yuklang', true); return; }
+        renderMessages($('drawing-messages'), []);
+        busy(true, "Gemini chizmani o'qiyapti... (10–60 soniya)");
+        let text = '';
+        try {
+            const file = await window.CadGemini.readFile(state.drawingFile);
+            text = await window.CadGemini.analyze({ key, model, file, prompt: D.buildPrompt($('drawing-note').value) });
+            $('drawing-answer').value = text;           // visible in the manual tab for checking / editing
+            const { spec, analysis, warnings } = D.parseAnswer(text);
+            analysis.model = model;
+            busy(false);
+            useDrawing({ spec, analysis }, warnings);
+        } catch (err) {
+            console.error(err);
+            busy(false);
+            const msgs = [['error', err.message]];
+            if (text) msgs.push(['warn', "Gemini javobi \"Qo'lda (chat)\" yorlig'idagi maydonga qo'yildi — u yerda tuzatib, qayta yasashingiz mumkin."]);
+            renderMessages($('drawing-messages'), msgs);
+        }
     }
 
     async function analyzeDrawing() {
@@ -653,6 +720,9 @@
 
     function setDrawingMode(mode) {
         $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+        $('drawing-gemini').classList.toggle('hidden', mode !== 'gemini');
+        $('drawing-gemini-run').classList.toggle('hidden', mode !== 'gemini');
+        $('drawing-upload').classList.toggle('hidden', mode === 'free');
         $('drawing-free').classList.toggle('hidden', mode !== 'free');
         $('drawing-api').classList.toggle('hidden', mode !== 'api');
     }
@@ -662,7 +732,7 @@
         const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
         const conf = { high: 'yuqori', medium: "o'rtacha", low: 'past' }[a.confidence] || a.confidence;
         el.innerHTML =
-            `<div><strong>${esc(a.part_name || 'Detal')}</strong> · ${a.kind === 'revolve' ? 'aylanma jism' : 'plastina'} · ishonch: <span class="conf-${esc(a.confidence)}">${esc(conf)}</span></div>` +
+            `<div><strong>${esc(a.part_name || 'Detal')}</strong> · ${{ revolve: 'aylanma jism', extrude: 'plastina', csg: 'qismlardan yig\'ilgan detal' }[a.kind] || a.kind} · ishonch: <span class="conf-${esc(a.confidence)}">${esc(conf)}</span>${a.model ? ' · ' + esc(a.model) : ''}</div>` +
             (a.dimensions && a.dimensions.length ? `<div><h4>O'qilgan o'lchamlar</h4><ul>${a.dimensions.map(d => `<li>${esc(d.label)}: ${esc(d.value_mm)} mm</li>`).join('')}</ul></div>` : '') +
             (a.assumptions && a.assumptions.length ? `<div><h4>Taxminlar va soddalashtirishlar</h4><ul>${a.assumptions.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>` : '');
         el.classList.remove('hidden');
@@ -805,6 +875,14 @@
         $('btn-copy-prompt').addEventListener('click', copyPrompt);
         $('btn-build-answer').addEventListener('click', buildFromAnswer);
         $$('.tab').forEach(t => t.addEventListener('click', () => setDrawingMode(t.dataset.mode)));
+        $('btn-gemini-check').addEventListener('click', () => checkGeminiKey(false));
+        $('gemini-key').addEventListener('change', () => checkGeminiKey(true));
+        $('gemini-key').addEventListener('input', updateGeminiButton);
+        $('gemini-model').addEventListener('change', () => { store.set(GEMINI_MODEL, $('gemini-model').value); updateGeminiButton(); });
+        $('gemini-remember').addEventListener('change', () => store.set(GEMINI_KEY, $('gemini-remember').checked ? $('gemini-key').value.trim() : ''));
+        $('btn-gemini').addEventListener('click', runGemini);
+        const savedKey = store.get(GEMINI_KEY);
+        if (savedKey) { $('gemini-key').value = savedKey; checkGeminiKey(true); }
         $('btn-server-check').addEventListener('click', serverCheck);
 
         $('btn-example-load').addEventListener('click', () => {
