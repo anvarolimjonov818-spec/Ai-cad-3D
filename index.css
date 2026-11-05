@@ -174,3 +174,7 @@ select.select { width: 100%; background: rgba(0,0,0,0.3); color: #fff; border: 1
     .top-right { top: auto; bottom: 64px; right: 8px; }
     .bottom-bar { bottom: 10px; }
 }
+
+.pulse { animation: pulse 0.8s ease-in-out 3; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(0, 242, 254, 0); } 50% { box-shadow: 0 0 0 4px rgba(0, 242, 254, 0.55); } }
+#photo-messages .btn { margin-top: 4px; }

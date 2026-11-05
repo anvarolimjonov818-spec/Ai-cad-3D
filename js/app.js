@@ -451,6 +451,23 @@
 
     function runContour(isNew) {
         if (!state.contourSource) return;
+        if (isNew && G.looksLikeDrawing(state.contourSource)) {
+            $('contour-panel').classList.add('hidden');
+            renderMessages($('photo-messages'), [['warn',
+                "Bu texnik chizmaga o'xshaydi. Bu bo'lim faqat fotosuratdan siluet oladi va chizmani o'qimaydi. " +
+                "Chizma uchun yuqoridagi \"Texnik chizmadan 3D\" bo'limidan foydalaning."]]);
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-secondary btn-sm';
+            btn.textContent = 'Baribir siluet sifatida ishlatish';
+            btn.addEventListener('click', () => { renderMessages($('photo-messages'), []); runContour(false); });
+            $('photo-messages').appendChild(btn);
+            $('drawing-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            $('drawing-card').classList.add('pulse');
+            setTimeout(() => $('drawing-card').classList.remove('pulse'), 2400);
+            toast("Chizmani \"Texnik chizmadan 3D\" bo'limi orqali yasang", true);
+            return;
+        }
+        renderMessages($('photo-messages'), []);
         const threshold = +$('contour-threshold').value;
         $('threshold-value').textContent = threshold;
         const result = G.extractContour(state.contourSource, { threshold });
@@ -473,7 +490,7 @@
         const H = parseFloat($('dim-height').value) || 100;
         if (isNew) $('dim-length').value = (Math.round(H * aspect * 10) / 10);
         $('contour-hint').textContent = 'Kalibrovka: H (balandlik) va L ni real o\'lchamga to\'g\'rilang — model shunga moslab masshtablanadi.';
-        selectPreset('contour', isNew);
+        selectPreset('contour', true);
     }
 
     function drawContourPreview(result) {
