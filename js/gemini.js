@@ -30,11 +30,55 @@
             const msg = (data.error && data.error.message) || res.statusText;
             if (res.status === 400 && /API key not valid|API_KEY_INVALID/i.test(msg)) throw new Error("API kalit noto'g'ri — aistudio.google.com/apikey sahifasidan nusxalang");
             if (res.status === 400 && /location is not supported/i.test(msg)) throw new Error('Gemini API sizning hududingizda ishlamayapti');
-            if (res.status === 403) throw new Error('Kalitga ruxsat yo\'q: ' + msg);
-            if (res.status === 429) throw new Error("Bepul limit tugadi (429). Bir oz kutib qayta urining yoki boshqa modelni tanlang. " + msg.split('\n')[0]);
-            throw new Error(`Gemini xatosi ${res.status}: ${msg}`);
+            if (res.status === 403) throw httpError(403, 'Kalitga ruxsat yo\'q: ' + msg);
+            if (res.status === 429) throw httpError(429, "Bepul limit tugadi (429). Bir oz kutib qayta urining yoki boshqa modelni tanlang. " + msg.split('\n')[0]);
+            if (res.status === 503 || res.status === 500 || res.status === 502 || res.status === 504) {
+                throw httpError(res.status, `Google serveri hozir band (${res.status}) — bu vaqtinchalik.`);
+            }
+            if (res.status === 404) throw httpError(404, `Model topilmadi (404): ${msg}`);
+            throw httpError(res.status, `Gemini xatosi ${res.status}: ${msg}`);
         }
         return data;
+    }
+
+    function httpError(status, message) {
+        const e = new Error(message);
+        e.status = status;
+        return e;
+    }
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const BUSY = [500, 502, 503, 504];
+
+    /**
+     * analyze() with resilience: retry the same model while Google reports it is
+     * busy (5xx), then fall back to the next models in `models` (also on 429
+     * quota and 404). Returns { text, model }. `onStatus(message)` reports progress.
+     */
+    async function analyzeResilient(opts) {
+        const { models, onStatus } = opts;
+        const delays = opts.retryDelays || [2000, 5000];
+        const order = [opts.model].concat((models || []).filter(m => m !== opts.model)).slice(0, opts.maxModels || 4);
+        let lastErr;
+        for (const model of order) {
+            for (let attempt = 0; attempt <= delays.length; attempt++) {
+                try {
+                    const text = await analyze(Object.assign({}, opts, { model }));
+                    return { text, model };
+                } catch (err) {
+                    lastErr = err;
+                    if (BUSY.includes(err.status) && attempt < delays.length) {
+                        if (onStatus) onStatus(`${model} band — ${Math.round(delays[attempt] / 1000)} s dan keyin qayta urinilmoqda...`);
+                        await sleep(delays[attempt]);
+                        continue;
+                    }
+                    break;   // try the next model (or give up on non-retryable errors)
+                }
+            }
+            if (!(BUSY.includes(lastErr.status) || lastErr.status === 429 || lastErr.status === 404)) throw lastErr;
+            if (onStatus) onStatus(`${model} ishlamadi — boshqa modelga o'tilmoqda...`);
+        }
+        throw lastErr;
     }
 
     /** Version number in a model name, e.g. "models/gemini-3.5-flash" → 3.5. */
@@ -114,5 +158,5 @@
         });
     }
 
-    return { listModels, rankModels, analyze, readFile };
+    return { listModels, rankModels, analyze, analyzeResilient, readFile };
 });

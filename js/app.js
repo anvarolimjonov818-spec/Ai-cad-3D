@@ -649,10 +649,16 @@
         let text = '';
         try {
             const file = await window.CadGemini.readFile(state.drawingFile);
-            text = await window.CadGemini.analyze({ key, model, file, prompt: D.buildPrompt($('drawing-note').value) });
+            const models = Array.from($('gemini-model').options).map(o => o.value).filter(Boolean);
+            const res = await window.CadGemini.analyzeResilient({
+                key, model, models, file, prompt: D.buildPrompt($('drawing-note').value),
+                onStatus: msg => { $('loading-step-text').textContent = msg; }
+            });
+            text = res.text;
+            if (res.model !== model) toast(`${model} band edi — ${res.model} modeli ishlatildi`);
             $('drawing-answer').value = text;           // visible in the manual tab for checking / editing
             const { spec, analysis, warnings } = D.parseAnswer(text);
-            analysis.model = model;
+            analysis.model = res.model;
             busy(false);
             useDrawing({ spec, analysis }, warnings);
         } catch (err) {
