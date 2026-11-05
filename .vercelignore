@@ -1,0 +1,8 @@
+# The site is static (index.html + js/ + index.css).
+# The Python backend (CadQuery/trimesh) runs locally, not on Vercel.
+backend/
+tests/
+node_modules/
+package.json
+package-lock.json
+*.md
