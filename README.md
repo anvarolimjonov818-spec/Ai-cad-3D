@@ -5,6 +5,7 @@ Rasm, video va real o'lchamlardan 3D printga tayyor (watertight) va CAD uchun mo
 ## Imkoniyatlar
 
 - **Parametrik shakllar:** sprey/ballon, quti (yumaloq burchakli), flanes (markaziy teshikli), vtulka/quvur.
+- **Texnik chizmadan 3D (AI):** chizma rasmi yoki PDF Claude'ga (`claude-opus-5-5`) yuboriladi. U ko'rinishlar va o'lchamlarni o'qib, aylanma jism (val, vtulka, disk) yoki teshikli plastina modelini qaytaradi. Server natijani haqiqiy solid sifatida yasab tekshiradi. O'qilgan o'lchamlar va qilingan taxminlar (masalan, rezba yoki faska tushirib qoldirilgani) ekranda ko'rsatiladi. Buning uchun serverda `ANTHROPIC_API_KEY` bo'lishi kerak.
 - **Rasmdan kontur:** obyekt fondan brauzerning o'zida ajratiladi (fon rangi, eng katta bog'langan soha, ichki teshiklarni to'ldirish). Kontur aylantiriladi (idish, vtulka) yoki cho'ziladi (plastina, profil). Kalibrovka H va L orqali qilinadi. Videoda o'rtadagi kadr olinadi.
 - **O'lcham tekshiruvi:** teshik detaldan katta bo'lsa yoki devor 1.2 mm dan yupqa bo'lsa, model yasalmaydi va xato ko'rsatiladi.
 - **3D print tekshiruvi:** ochiq, non-manifold va teskari yo'nalgan qirralar soni, normallar yo'nalishi, hajm, sirt yuzasi va materialga qarab vazn.
@@ -21,6 +22,7 @@ Rasm, video va real o'lchamlardan 3D printga tayyor (watertight) va CAD uchun mo
 
 ```bash
 pip install -r backend/requirements.txt
+export ANTHROPIC_API_KEY=sk-ant-...   # chizma tahlili uchun (ixtiyoriy)
 python backend/main.py
 ```
 
@@ -46,6 +48,7 @@ npm test
 | `js/mesher.js` | spec → Three.js geometriya |
 | `js/app.js` | UI, viewer, eksport |
 | `backend/cad.py` | spec → CadQuery solid → STEP |
+| `backend/drawing.py` | chizma → Claude vision (structured output) → spec |
 | `backend/mesh.py` | trimesh tekshiruvi va tuzatish |
 | `backend/main.py` | FastAPI server |
 

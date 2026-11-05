@@ -14,10 +14,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, model_validator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cad  # noqa: E402
+import drawing  # noqa: E402
 import mesh as meshlib  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -62,7 +64,7 @@ class Spec(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "step": cad.available(), "version": app.version}
+    return {"ok": True, "step": cad.available(), "drawing": drawing.available(), "version": app.version}
 
 
 @app.post("/api/export/step")
@@ -107,6 +109,30 @@ async def mesh_repair(request: Request):
     m, log = meshlib.repair(m)
     return Response(meshlib.to_stl(m), media_type="model/stl",
                     headers={"X-Repair-Log": "; ".join(log) or "clean"})
+
+
+@app.post("/api/drawing/analyze")
+async def drawing_analyze(request: Request, note: str = ""):
+    """Body: the drawing file (image or PDF); Content-Type must match it."""
+    if not drawing.available():
+        raise HTTPException(503, "Chizma tahlili uchun serverda ANTHROPIC_API_KEY o'rnatilmagan")
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "Bo'sh so'rov: chizma faylini yuboring")
+    media_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    try:
+        result = await run_in_threadpool(drawing.analyze, body, media_type, note)
+    except drawing.DrawingError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:  # API/network failures
+        raise HTTPException(502, f"Claude API xatosi: {e}")
+    try:  # make sure the spec is a valid Spec and really builds as a solid
+        spec = Spec.model_validate(result["spec"]).model_dump()
+        if cad.available():
+            result["analysis"]["volume_cm3"] = cad.volume_mm3(spec) / 1000
+    except Exception as e:
+        raise HTTPException(422, f"Chizmadan olingan geometriya yaroqsiz: {e}")
+    return result
 
 
 # --- static frontend (only the app files, never the repo root) ---

@@ -29,7 +29,9 @@
         soup: null,            // Float32Array triangle soup currently displayed
         report: null,
         modelName: 'model',
-        api: null
+        api: null,
+        drawing: null,         // { spec, analysis } from /api/drawing/analyze
+        drawingFile: null
     };
 
     let scene, camera, renderer, controls, gridHelper, modelGroup, mesh, dimsGroup;
@@ -223,6 +225,7 @@
     function rebuild(opts) {
         opts = opts || {};
         if (state.preset === 'contour' && state.contour && state.contour.mode === 'revolve') $('dim-width').value = $('dim-length').value;
+        if (state.preset === 'drawing') return showSpec(state.drawing.spec, state.drawing.spec.name || 'chizma', opts);
         const dims = readDims();
         const { errors, warnings } = G.validate(state.preset, dims);
         renderMessages($('validation-messages'), errors.map(e => ['error', e]).concat(warnings.map(w => ['warn', w])));
@@ -236,6 +239,21 @@
             setGeometry(geo);
             analyze();
             if (opts.fit) fitCamera();
+        } catch (err) {
+            console.error(err);
+            setStatus('error', err.message);
+        }
+    }
+
+    function showSpec(spec, name, opts) {
+        try {
+            state.spec = spec;
+            const geo = M.specToGeometry(THREE, spec);
+            state.soup = geo.attributes.position.array;
+            state.modelName = name.replace(/[^A-Za-z0-9_-]+/g, '_') || 'model';
+            setGeometry(geo);
+            analyze();
+            if (opts && opts.fit) fitCamera();
         } catch (err) {
             console.error(err);
             setStatus('error', err.message);
@@ -304,6 +322,8 @@
         state.preset = type;
         $$('.btn-chip').forEach(b => b.classList.toggle('active', b.dataset.type === type));
         const meta = G.PRESETS[type];
+        $('dims-form').classList.toggle('hidden', type === 'drawing');
+        if (type === 'drawing') renderMessages($('validation-messages'), [['ok', "O'lchamlar chizmadan olingan. Parametrik shaklga qaytish uchun boshqa shaklni tanlang."]]);
         $('param-group').classList.toggle('hidden', !meta.param);
         if (meta.param) $('label-param').textContent = meta.param;
         const revolve = meta.revolve || (type === 'contour' && state.contour && state.contour.mode === 'revolve');
@@ -483,7 +503,7 @@
                 const res = await fetch(base.replace(/\/$/, '') + '/api/health', { cache: 'no-store' });
                 if (res.ok) {
                     const info = await res.json();
-                    state.api = { base: base.replace(/\/$/, ''), step: !!info.step };
+                    state.api = { base: base.replace(/\/$/, ''), step: !!info.step, drawing: !!info.drawing };
                     break;
                 }
             } catch (e) { /* not available */ }
@@ -494,6 +514,58 @@
         else status.textContent = 'Server ulangan: STEP eksport (CadQuery) va trimesh tekshiruvi tayyor.';
         $('export-step').classList.toggle('disabled', !(state.api && state.api.step));
         $('btn-server-check').disabled = !state.api;
+        const drawingReady = !!(state.api && state.api.drawing);
+        $('btn-analyze-drawing').disabled = !(drawingReady && state.drawingFile);
+        $('drawing-status').textContent = !state.api
+            ? "Chizma tahlili uchun server kerak: ANTHROPIC_API_KEY bilan `python backend/main.py` ni ishga tushiring."
+            : drawingReady ? "Chizma Claude'ga (Anthropic API) yuboriladi va tahlil qilinadi."
+            : "Serverda ANTHROPIC_API_KEY o'rnatilmagan — chizma tahlili o'chirilgan.";
+    }
+
+    // ------------------------------------------------------- drawing → 3D
+
+    function pickDrawing(file) {
+        if (!file) return;
+        const ok = /^image\/(png|jpeg|webp|gif)$/.test(file.type) || file.type === 'application/pdf';
+        if (!ok) { toast('Faqat PNG, JPEG, WEBP, GIF yoki PDF chizma', true); return; }
+        state.drawingFile = file;
+        $('drawing-file-name').textContent = '📄 ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)';
+        $('btn-analyze-drawing').disabled = !(state.api && state.api.drawing);
+    }
+
+    async function analyzeDrawing() {
+        if (!state.drawingFile || !state.api || !state.api.drawing) return;
+        busy(true, 'Chizma tahlil qilinmoqda... (bir necha daqiqa olishi mumkin)');
+        try {
+            const note = $('drawing-note').value.trim();
+            const res = await fetch(state.api.base + '/api/drawing/analyze?note=' + encodeURIComponent(note), {
+                method: 'POST', headers: { 'Content-Type': state.drawingFile.type }, body: state.drawingFile
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || res.statusText);
+            state.drawing = data;
+            renderDrawingResult(data.analysis);
+            const chip = $$('.btn-chip[data-type="drawing"]')[0];
+            chip.classList.remove('hidden');
+            selectPreset('drawing', true);
+            toast('3D model chizma asosida yaratildi');
+        } catch (err) {
+            console.error(err);
+            toast('Chizma tahlili: ' + err.message, true);
+        } finally {
+            busy(false);
+        }
+    }
+
+    function renderDrawingResult(a) {
+        const el = $('drawing-result');
+        const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const conf = { high: 'yuqori', medium: "o'rtacha", low: 'past' }[a.confidence] || a.confidence;
+        el.innerHTML =
+            `<div><strong>${esc(a.part_name || 'Detal')}</strong> · ${a.kind === 'revolve' ? 'aylanma jism' : 'plastina'} · ishonch: <span class="conf-${esc(a.confidence)}">${esc(conf)}</span></div>` +
+            (a.dimensions && a.dimensions.length ? `<div><h4>O'qilgan o'lchamlar</h4><ul>${a.dimensions.map(d => `<li>${esc(d.label)}: ${esc(d.value_mm)} mm</li>`).join('')}</ul></div>` : '') +
+            (a.assumptions && a.assumptions.length ? `<div><h4>Taxminlar va soddalashtirishlar</h4><ul>${a.assumptions.map(t => `<li>${esc(t)}</li>`).join('')}</ul></div>` : '');
+        el.classList.remove('hidden');
     }
 
     async function serverCheck() {
@@ -619,6 +691,14 @@
         $('stl-input').addEventListener('change', e => { if (e.target.files[0]) importSTL(e.target.files[0]); e.target.value = ''; });
 
         $('btn-repair').addEventListener('click', repair);
+
+        const dz = $('drawing-zone'), di = $('drawing-input');
+        dz.addEventListener('click', () => di.click());
+        di.addEventListener('change', () => { pickDrawing(di.files[0]); di.value = ''; });
+        dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+        dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+        dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); pickDrawing(e.dataTransfer.files[0]); });
+        $('btn-analyze-drawing').addEventListener('click', analyzeDrawing);
         $('btn-server-check').addEventListener('click', serverCheck);
 
         $('btn-example-load').addEventListener('click', () => {
@@ -642,5 +722,5 @@
     });
 
     // exposed for debugging and automated browser tests
-    window.AICad = { state, exportModel, repair, importSTL, loadMedia, rebuild, selectPreset };
+    window.AICad = { state, exportModel, repair, importSTL, loadMedia, rebuild, selectPreset, showSpec };
 })();

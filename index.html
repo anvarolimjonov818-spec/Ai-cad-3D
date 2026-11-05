@@ -73,6 +73,29 @@
                     <p class="hint" id="contour-hint">Kontur rasmdan brauzerning o'zida ajratiladi — fayl hech qayerga yuborilmaydi.</p>
                 </div>
 
+                <!-- Drawing analysis -->
+                <div class="card-panel">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-compass-drafting"></i> Texnik chizmadan 3D</h2>
+                        <span class="tooltip-badge">AI</span>
+                    </div>
+                    <div class="upload-zone" id="drawing-zone">
+                        <input type="file" id="drawing-input" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" hidden>
+                        <div class="upload-content">
+                            <div class="upload-icon-wrapper"><i class="fa-solid fa-file-pdf"></i></div>
+                            <h3>Chizmani yuklang (rasm yoki PDF)</h3>
+                            <p>AI ko'rinishlar va o'lchamlarni o'qib, 3D model yasaydi</p>
+                        </div>
+                    </div>
+                    <p class="hint" id="drawing-file-name"></p>
+                    <textarea class="note-input" id="drawing-note" rows="2" placeholder="Izoh (ixtiyoriy): masalan, &quot;4 ta teshik Ø10, qalinligi 8 mm&quot;"></textarea>
+                    <button class="btn btn-success btn-block" id="btn-analyze-drawing" disabled>
+                        <i class="fa-solid fa-microchip"></i> Chizmani tahlil qilish
+                    </button>
+                    <p class="hint" id="drawing-status">Server holati tekshirilmoqda...</p>
+                    <div class="drawing-result hidden" id="drawing-result"></div>
+                </div>
+
                 <!-- 2. Shape & dimensions -->
                 <div class="card-panel">
                     <div class="panel-header">
@@ -84,8 +107,9 @@
                         <button class="btn-chip" data-type="flange"><i class="fa-solid fa-gears"></i> Flanes</button>
                         <button class="btn-chip" data-type="tube"><i class="fa-solid fa-ring"></i> Vtulka / Quvur</button>
                         <button class="btn-chip" data-type="contour" disabled title="Avval rasm yuklang"><i class="fa-solid fa-image"></i> Rasm konturi</button>
+                        <button class="btn-chip hidden" data-type="drawing"><i class="fa-solid fa-compass-drafting"></i> Chizma</button>
                     </div>
-                    <div class="form-grid" style="margin-top:12px">
+                    <div class="form-grid" id="dims-form" style="margin-top:12px">
                         <div class="input-group">
                             <label for="dim-length" id="label-length">Uzunlik / Diametr (L)</label>
                             <div class="input-wrapper"><input type="number" id="dim-length" value="60" min="1" max="2000" step="0.1"><span class="unit">mm</span></div>
