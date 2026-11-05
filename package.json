@@ -1,22 +1,17 @@
 {
   "name": "ai-cad-3d-reconstructor",
-  "version": "1.0.0",
-  "description": "AI-Powered Photo & Video to 3D/CAD Model Generator",
-  "main": "app.js",
+  "version": "2.0.0",
+  "description": "Photo/video + dimensions to watertight 3D print and CAD models (STL, OBJ, GLB, STEP)",
+  "private": true,
   "scripts": {
     "start": "python backend/main.py",
-    "test": "python -m unittest discover -s tests"
+    "test": "npm run test:js && npm run test:py",
+    "test:js": "node --test tests/js/*.test.js",
+    "test:py": "python -m unittest discover -s tests"
   },
-  "keywords": [
-    "3d",
-    "cad",
-    "photogrammetry",
-    "threejs",
-    "stl",
-    "step",
-    "ai",
-    "reconstruction"
-  ],
-  "author": "Antigravity AI",
+  "devDependencies": {
+    "three": "0.128.0"
+  },
+  "keywords": ["3d", "cad", "threejs", "stl", "step", "cadquery", "trimesh", "reconstruction"],
   "license": "MIT"
 }
