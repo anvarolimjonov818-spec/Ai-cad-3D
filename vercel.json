@@ -1,7 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "installCommand": "echo 'static site, nothing to install'",
-  "buildCommand": "rm -rf public && mkdir -p public && cp -r index.html index.css js public/",
-  "outputDirectory": "public"
+  "version": 2,
+  "builds": [
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "index.css", "use": "@vercel/static" },
+    { "src": "js/*.js", "use": "@vercel/static" }
+  ]
 }
