@@ -1,0 +1,43 @@
+{
+  "_comment": "Hand-modelled answers for three real drawings; expected volumes are analytic (mm^3).",
+  "blok_silindr": {
+    "expected_volume": 156821.2,
+    "answer": {
+      "part_name": "Silindrli blok", "kind": "csg", "confidence": "high",
+      "dimensions": [{"label": "80", "value_mm": 80}, {"label": "60", "value_mm": 60}, {"label": "20", "value_mm": 20}, {"label": "Ø44", "value_mm": 44}, {"label": "60 (umumiy balandlik)", "value_mm": 60}],
+      "assumptions": [],
+      "features": [
+        {"op": "add", "shape": "prism", "axis": "z", "from": 0, "to": 20, "outline": [[-40, -30], [40, -30], [40, 30], [-40, 30]], "label": "Asos 80x60x20"},
+        {"op": "add", "shape": "cylinder", "axis": "z", "from": 20, "to": 60, "center": [0, 0], "diameter": 44, "label": "Silindr Ø44"}
+      ]
+    }
+  },
+  "kalit": {
+    "expected_volume": 49699.9,
+    "answer": {
+      "part_name": "Gayka kaliti", "kind": "csg", "confidence": "high",
+      "dimensions": [{"label": "Ø50", "value_mm": 50}, {"label": "Ø36", "value_mm": 36}, {"label": "R10", "value_mm": 10}, {"label": "120", "value_mm": 120}, {"label": "20", "value_mm": 20}, {"label": "8", "value_mm": 8}],
+      "assumptions": ["Halqa va dasta orasidagi kichik o'tish radiusi kiritilmadi"],
+      "features": [
+        {"op": "add", "shape": "hull", "axis": "z", "from": 0, "to": 8, "circles": [{"center": [0, 0], "diameter": 50}, {"center": [120, 0], "diameter": 20}], "label": "Dasta"},
+        {"op": "add", "shape": "cylinder", "axis": "z", "from": 0, "to": 20, "center": [0, 0], "diameter": 50, "label": "Halqa Ø50"},
+        {"op": "cut", "shape": "regular_prism", "axis": "z", "from": 0, "to": 20, "center": [0, 0], "sides": 6, "diameter": 36, "rotation_deg": 0, "label": "Olti qirrali teshik Ø36"}
+      ]
+    }
+  },
+  "vtulkali_asos": {
+    "expected_volume": 93662.3,
+    "answer": {
+      "part_name": "Vtulkali asos", "kind": "csg", "confidence": "medium",
+      "dimensions": [{"label": "80", "value_mm": 80}, {"label": "50", "value_mm": 50}, {"label": "20", "value_mm": 20}, {"label": "55", "value_mm": 55}, {"label": "Ø40", "value_mm": 40}, {"label": "□20", "value_mm": 20}, {"label": "24", "value_mm": 24}, {"label": "12", "value_mm": 12}, {"label": "8x8 faska", "value_mm": 8}],
+      "assumptions": ["Chetki ariqlar qiya (12 mm uzunlikda 20 mm dan 0 gacha) deb olindi"],
+      "features": [
+        {"op": "add", "shape": "prism", "axis": "z", "from": 0, "to": 20, "outline": [[-32, -25], [32, -25], [40, -17], [40, 17], [32, 25], [-32, 25], [-40, 17], [-40, -17]], "label": "Asos 80x50, burchaklari 8x8"},
+        {"op": "add", "shape": "cylinder", "axis": "z", "from": 20, "to": 55, "center": [0, 0], "diameter": 40, "label": "Vtulka Ø40"},
+        {"op": "cut", "shape": "prism", "axis": "y", "from": -12, "to": 12, "outline": [[28, 20], [40, 0], [40, 20]], "label": "O'ng qiya ariq"},
+        {"op": "cut", "shape": "prism", "axis": "y", "from": -12, "to": 12, "outline": [[-28, 20], [-40, 20], [-40, 0]], "label": "Chap qiya ariq"},
+        {"op": "cut", "shape": "regular_prism", "axis": "z", "from": 0, "to": 55, "center": [0, 0], "sides": 4, "diameter": 28.2843, "rotation_deg": 0, "label": "Kvadrat teshik □20"}
+      ]
+    }
+  }
+}

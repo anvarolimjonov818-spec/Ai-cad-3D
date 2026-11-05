@@ -33,7 +33,8 @@
         bevel_box:    { label: 'Quti / Korpus',  param: 'Burchak radiusi (r)' },
         flange:       { label: 'Flanes / Plastina', param: 'Teshik diametri (Ø)' },
         tube:         { label: 'Vtulka / Quvur', param: 'Ichki diametr (Ø)', revolve: true },
-        contour:      { label: 'Rasm konturi',   param: null }
+        contour:      { label: 'Rasm konturi',   param: null },
+        drawing:      { label: 'Chizma (AI)',    param: null }
     };
 
     function roundedRect(l, w, r) {

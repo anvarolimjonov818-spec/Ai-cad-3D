@@ -10,8 +10,18 @@
     "test:py": "python -m unittest discover -s tests"
   },
   "devDependencies": {
+    "manifold-3d": "^3.5.4",
     "three": "0.128.0"
   },
-  "keywords": ["3d", "cad", "threejs", "stl", "step", "cadquery", "trimesh", "reconstruction"],
+  "keywords": [
+    "3d",
+    "cad",
+    "threejs",
+    "stl",
+    "step",
+    "cadquery",
+    "trimesh",
+    "reconstruction"
+  ],
   "license": "MIT"
 }

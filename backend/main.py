@@ -8,16 +8,18 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, model_validator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cad  # noqa: E402
+import drawing  # noqa: E402
 import mesh as meshlib  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,8 +39,50 @@ class Hole(BaseModel):
     r: float = Field(gt=0, le=MAX_DIM)
 
 
+Coord = Annotated[float, Field(ge=-MAX_DIM, le=MAX_DIM)]
+
+
+class Circle(BaseModel):
+    center: tuple[Coord, Coord] = (0.0, 0.0)
+    diameter: float = Field(gt=0, le=2 * MAX_DIM)
+
+
+class Feature(BaseModel):
+    """One step of a feature-based ("csg") part; see js/csg.js for the conventions."""
+    op: Literal["add", "cut"] = "add"
+    shape: Literal["prism", "cylinder", "regular_prism", "hull", "revolve"]
+    axis: Literal["x", "y", "z"] = "z"
+    from_: Optional[Coord] = Field(default=None, alias="from")
+    to: Optional[Coord] = None
+    outline: Optional[list[tuple[Coord, Coord]]] = Field(default=None, max_length=4000)
+    profile: Optional[list[tuple[Coord, Coord]]] = Field(default=None, max_length=4000)
+    center: tuple[Coord, Coord] = (0.0, 0.0)
+    diameter: Optional[float] = Field(default=None, gt=0, le=2 * MAX_DIM)
+    sides: Optional[int] = Field(default=None, ge=3, le=64)
+    rotation_deg: float = 0.0
+    circles: Optional[list[Circle]] = Field(default=None, max_length=50)
+    label: str = ""
+
+    model_config = {"populate_by_name": True}
+
+    @model_validator(mode="after")
+    def check(self):
+        need = {"prism": ["outline"], "cylinder": ["diameter"], "regular_prism": ["diameter", "sides"],
+                "hull": ["circles"], "revolve": ["profile"]}[self.shape]
+        for name in need:
+            if not getattr(self, name):
+                raise ValueError(f"{self.shape} feature needs '{name}'")
+        if self.shape != "revolve":
+            if self.from_ is None or self.to is None or self.to - self.from_ <= 0:
+                raise ValueError(f"{self.shape} feature needs from < to")
+        if self.shape in ("prism", "revolve") and len(self.outline or self.profile) < 3:
+            raise ValueError("polygon needs at least 3 points")
+        return self
+
+
 class Spec(BaseModel):
-    kind: Literal["revolve", "extrude"]
+    kind: Literal["revolve", "extrude", "csg"]
+    features: Optional[list[Feature]] = Field(default=None, max_length=80)
     name: str = "model"
     profile: Optional[list[Point]] = Field(default=None, max_length=4000)
     outline: Optional[list[Point]] = Field(default=None, max_length=4000)
@@ -48,6 +92,12 @@ class Spec(BaseModel):
 
     @model_validator(mode="after")
     def check(self):
+        if self.kind == "csg":
+            if not self.features:
+                raise ValueError("csg spec needs features")
+            if self.features[0].op != "add":
+                raise ValueError("first feature must be 'add'")
+            return self
         pts = self.profile if self.kind == "revolve" else self.outline
         if not pts or len(pts) < 3:
             raise ValueError(f"{'profile' if self.kind == 'revolve' else 'outline'} needs at least 3 points")
@@ -62,7 +112,7 @@ class Spec(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "step": cad.available(), "version": app.version}
+    return {"ok": True, "step": cad.available(), "drawing": drawing.available(), "version": app.version}
 
 
 @app.post("/api/export/step")
@@ -70,7 +120,7 @@ def export_step(spec: Spec):
     if not cad.available():
         raise HTTPException(503, "CadQuery is not installed on the server")
     try:
-        data = cad.to_step(spec.model_dump())
+        data = cad.to_step(spec.model_dump(by_alias=True, exclude_none=True))
     except (ValueError, RuntimeError) as e:
         raise HTTPException(422, str(e))
     except Exception as e:  # OCC kernel failures
@@ -107,6 +157,30 @@ async def mesh_repair(request: Request):
     m, log = meshlib.repair(m)
     return Response(meshlib.to_stl(m), media_type="model/stl",
                     headers={"X-Repair-Log": "; ".join(log) or "clean"})
+
+
+@app.post("/api/drawing/analyze")
+async def drawing_analyze(request: Request, note: str = ""):
+    """Body: the drawing file (image or PDF); Content-Type must match it."""
+    if not drawing.available():
+        raise HTTPException(503, "Chizma tahlili uchun serverda ANTHROPIC_API_KEY o'rnatilmagan")
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "Bo'sh so'rov: chizma faylini yuboring")
+    media_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    try:
+        result = await run_in_threadpool(drawing.analyze, body, media_type, note)
+    except drawing.DrawingError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:  # API/network failures
+        raise HTTPException(502, f"Claude API xatosi: {e}")
+    try:  # make sure the spec is a valid Spec and really builds as a solid
+        spec = Spec.model_validate(result["spec"]).model_dump(by_alias=True, exclude_none=True)
+        if cad.available():
+            result["analysis"]["volume_cm3"] = cad.volume_mm3(spec) / 1000
+    except Exception as e:
+        raise HTTPException(422, f"Chizmadan olingan geometriya yaroqsiz: {e}")
+    return result
 
 
 # --- static frontend (only the app files, never the repo root) ---
