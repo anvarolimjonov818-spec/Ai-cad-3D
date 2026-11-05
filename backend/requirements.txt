@@ -1,0 +1,9 @@
+fastapi>=0.110
+uvicorn>=0.27
+trimesh>=4.0
+numpy>=1.24
+networkx>=3.0   # trimesh hole filling
+# optional, enables STEP export (large download, includes the OpenCASCADE kernel)
+cadquery>=2.4
+# tests
+httpx>=0.27
