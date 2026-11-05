@@ -112,6 +112,40 @@ class DrawingTests(unittest.TestCase):
         walk(drawing.SCHEMA)
 
 
+FIXTURES = json.loads((ROOT / "tests" / "fixtures" / "drawings.json").read_text(encoding="utf-8"))
+REAL = {k: v for k, v in FIXTURES.items() if not k.startswith("_")}
+
+
+def api_answer(answer):
+    """Pad a free-mode answer with the fields the strict API schema always sends."""
+    blank = {"axis": "z", "from": 0, "to": 0, "outline": [], "profile": [], "center": [0, 0], "diameter": 0,
+             "sides": 0, "rotation_deg": 0, "circles": [], "label": ""}
+    return dict(answer, features=[{**blank, **f} for f in answer["features"]])
+
+
+class CsgTests(unittest.TestCase):
+    def test_prompt_shared_with_browser(self):
+        self.assertIn('"kind": "csg"', drawing.SYSTEM)
+        self.assertIn("```json", drawing.SYSTEM)
+        self.assertNotIn("\\`", drawing.SYSTEM)
+
+    def test_api_answer_to_spec_drops_unused_fields(self):
+        spec = drawing.to_spec(api_answer(REAL["kalit"]["answer"]))
+        self.assertEqual(spec["kind"], "csg")
+        hull, ring, hexagon = spec["features"]
+        self.assertEqual(set(hull), {"op", "shape", "label", "axis", "from", "to", "circles"})
+        self.assertEqual(hexagon["sides"], 6)
+
+    @unittest.skipUnless(cad.available(), "cadquery not installed")
+    def test_real_drawings_build_exact_solids(self):
+        for name, fx in REAL.items():
+            with self.subTest(drawing=name):
+                spec = drawing.to_spec(api_answer(fx["answer"]))
+                solid = cad.build_solid(spec).val()
+                self.assertTrue(solid.isValid())
+                self.assertAlmostEqual(solid.Volume(), fx["expected_volume"], delta=0.5)
+
+
 class DrawingApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -135,6 +169,19 @@ class DrawingApiTests(unittest.TestCase):
         self.assertEqual(body["spec"]["kind"], "extrude")
         if cad.available():
             self.assertGreater(body["analysis"]["volume_cm3"], 0)
+
+    @unittest.skipUnless(cad.available(), "cadquery not installed")
+    def test_csg_step_export(self):
+        spec = dict(REAL["vtulkali_asos"]["answer"], name="Vtulkali asos")
+        r = self.client.post("/api/export/step", json={"kind": "csg", "name": spec["name"], "features": spec["features"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(r.content.startswith(b"ISO-10303-21"))
+
+    def test_csg_spec_validation(self):
+        bad = {"kind": "csg", "features": [{"op": "cut", "shape": "cylinder", "from": 0, "to": 5, "diameter": 3}]}
+        self.assertEqual(self.client.post("/api/export/step", json=bad).status_code, 422)
+        bad = {"kind": "csg", "features": [{"op": "add", "shape": "cylinder", "from": 5, "to": 5, "diameter": 3}]}
+        self.assertEqual(self.client.post("/api/export/step", json=bad).status_code, 422)
 
 
 if __name__ == "__main__":

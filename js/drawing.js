@@ -1,6 +1,8 @@
 /*
  * Free drawing → 3D flow: the user uploads the drawing to claude.ai together
  * with the prompt below, then pastes Claude's JSON answer back into the app.
+ * Answers use the feature-based "csg" spec (js/csg.js); the older single-body
+ * "revolve" / "extrude" answers are still accepted.
  * No API key and no server needed. Works in the browser and in Node tests.
  */
 (function (root, factory) {
@@ -9,43 +11,49 @@
 })(typeof self !== 'undefined' ? self : this, function () {
     'use strict';
 
+    const CSG = typeof module === 'object' && module.exports ? require('./csg.js') : self.CadCSG;
     const MAX_COORD = 5000;   // mm
     const MAX_POINTS = 4000;
 
-    const PROMPT = `You are reading a mechanical engineering drawing (ESKD/GOST, ISO or ANSI) that I attached. Turn it into a simple solid model for my CAD app.
+    // Single source of truth for the drawing prompt (backend/drawing.py reads it from here).
+    const PROMPT = `You are reading a mechanical engineering drawing (ESKD/GOST, ISO or ANSI; orthographic views, sections, maybe an isometric) that I attached. Build the part as a solid model for my CAD app, which assembles the part from simple features.
 
-The app supports exactly two kinds of part:
+COORDINATES (millimetres):
+- X = left-right in the main (front) view, Y = depth (the vertical direction of the top view, +Y = towards the back), Z = height (up in the front view).
+- Origin: the centre of the part's footprint (or its main axis), Z = 0 on the bottom face.
 
-1. "revolve" - a body of rotation (shaft, bushing, pin, flange disc, pulley).
-   "profile" is the half-section as a closed polygon of [radius, axial_position] points in mm.
-   radius >= 0, the axis is radius 0, the part starts at axial position 0.
-   Include steps, grooves, chamfers (as straight segments) and axial bores (as an inner radius).
-   Start on the axis (or on the bore) and walk around the section once, without crossing itself.
+FEATURES are applied in order, starting from nothing: "add" = union, "cut" = subtract. The first feature must be "add".
+Every feature extends along "axis" ("z" vertical, "x" or "y" horizontal) from "from" to "to" (absolute coordinates on that axis).
+Points [u, v] lie in the plane perpendicular to the axis: axis "z" -> [x, y], axis "x" -> [y, z], axis "y" -> [x, z].
+- "prism": "outline" = closed polygon [[u, v], ...], no self-crossing. Approximate arcs and fillets with enough points.
+- "cylinder": "center" [u, v], "diameter".
+- "regular_prism": regular polygon with "sides", "diameter" = circumscribed (across corners), "rotation_deg" = angle of the first corner from +u, "center".
+  A hexagon given across flats S has diameter S / cos(30°). A square □a has diameter a·√2 (rotation 45 = sides parallel to the axes, 0 = diamond).
+- "hull": convex hull of "circles" [{"center": [u, v], "diameter": d}, ...] - wrench arms, links, slots, lugs with rounded ends.
+- "revolve": vertical body of rotation: "profile" = closed half-section [[radius, z], ...] (radius >= 0), around a vertical axis at "center" [x, y]. Use for shafts, grooves, tapers, stepped bores.
 
-2. "extrude" - a flat plate: "outline" is the plan-view outer contour as [x, y] points in mm,
-   centred on the origin, counter-clockwise; approximate arcs and fillets with enough points to look round.
-   "thickness" is the plate thickness, "holes" are circular through holes [{"x", "y", "diameter"}].
+HOW TO WORK:
+1. Read every view, section and hatching. Hatched areas are material cut by the section plane; hidden or sectioned interior shows holes and bores.
+2. Use only dimensions written on the drawing; respect dimension chains, symmetry, Ø, R, □, S, "4x Ø10" / "4 отв.", chamfers "2x45°", and the scale.
+3. Make through cuts 1 mm longer than the material on both ends so faces do not coincide.
+4. Check that every view of your model matches the drawing (overall sizes, positions of holes, slots and steps) before answering.
+5. If something is not dimensioned, estimate it from the picture, say so in "assumptions" and set "confidence" to "low". Threads are modelled as plain holes/shafts of the nominal diameter; list such simplifications in "assumptions".
+6. Write "part_name", "label" and "assumptions" in Uzbek (Latin script).
 
-Rules:
-- Use only dimensions written on the drawing. If a dimension is missing and you estimate it from the
-  picture, say so in "assumptions" and set "confidence" to "low".
-- Respect dimension chains, symmetry, Ø / R / quantity notes (e.g. "4 отв. Ø10", "4x Ø10") and the scale.
-- If the part has features these two kinds cannot express (threads, keyways, cross holes, pockets,
-  several bodies), model the closest supported shape and list every omitted feature in "assumptions".
-- Write "part_name" and "assumptions" in Uzbek (Latin script).
-
-Answer with ONE JSON code block only, exactly in this shape (use [] and 0 for fields the kind does not use):
+ANSWER: first a few short lines describing the part, then ONE JSON code block exactly in this shape (omit fields a shape does not use):
 
 \`\`\`json
 {
-  "part_name": "Val",
-  "kind": "revolve",
-  "profile": [[0, 0], [10, 0], [10, 40], [6, 40], [6, 70], [0, 70]],
-  "outline": [],
-  "holes": [],
-  "thickness": 0,
-  "dimensions": [{"label": "Ø20", "value_mm": 20}],
-  "assumptions": ["Rezba modelga kiritilmadi"],
+  "part_name": "Silindrli blok",
+  "kind": "csg",
+  "features": [
+    {"op": "add", "shape": "prism", "axis": "z", "from": 0, "to": 20, "outline": [[-40, -30], [40, -30], [40, 30], [-40, 30]], "label": "Asos 80x60x20"},
+    {"op": "add", "shape": "cylinder", "axis": "z", "from": 20, "to": 60, "center": [0, 0], "diameter": 44, "label": "Silindr Ø44"},
+    {"op": "cut", "shape": "cylinder", "axis": "z", "from": -1, "to": 61, "center": [0, 0], "diameter": 20, "label": "Teshik Ø20"},
+    {"op": "cut", "shape": "prism", "axis": "y", "from": -31, "to": 31, "outline": [[30, 21], [41, 21], [41, 10]], "label": "Qiya kesim"}
+  ],
+  "dimensions": [{"label": "Ø44", "value_mm": 44}],
+  "assumptions": ["Faskalar modelga kiritilmadi"],
   "confidence": "high"
 }
 \`\`\``;
@@ -144,7 +152,9 @@ Answer with ONE JSON code block only, exactly in this shape (use [] and 0 for fi
         const warnings = [];
         let spec;
 
-        if (kind === 'revolve') {
+        if (kind === 'csg' || (!kind && Array.isArray(r.features))) {
+            spec = CSG.normalize({ name, features: r.features });
+        } else if (kind === 'revolve') {
             const profile = dedupe(toPoints(r.profile || [], 'profile'));
             if (profile.length < 3) throw new Error("Aylanma profilda kamida 3 ta nuqta bo'lishi kerak");
             if (profile.some(([rad]) => rad < -1e-9)) throw new Error("Profil radiusi manfiy bo'lishi mumkin emas");
@@ -168,7 +178,7 @@ Answer with ONE JSON code block only, exactly in this shape (use [] and 0 for fi
             }
             spec = { kind: 'extrude', name, axis: 'y', depth: thickness, outline, holes };
         } else {
-            throw new Error(`"kind" faqat "revolve" yoki "extrude" bo'lishi mumkin (keldi: "${r.kind}")`);
+            throw new Error(`"kind" "csg" bo'lishi kerak (keldi: "${r.kind}")`);
         }
 
         const analysis = {

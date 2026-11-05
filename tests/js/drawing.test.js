@@ -16,7 +16,7 @@ const chatAnswer = obj => `Chizmani tahlil qildim. Mana model:\n\n\`\`\`json\n${
 
 test('prompt includes the note and the JSON shape', () => {
     const p = D.buildPrompt('4 ta teshik Ø10');
-    assert.match(p, /"kind": "revolve"/);
+    assert.match(p, /"kind": "csg"/);
     assert.match(p, /4 ta teshik Ø10$/);
     assert.equal(D.buildPrompt(''), D.PROMPT);
 });
@@ -47,7 +47,7 @@ test('parses a revolve answer and tolerates trailing commas and object points', 
 test('rejects broken answers with a clear message', () => {
     assert.throws(() => D.parseAnswer(''), /bo'sh/);
     assert.throws(() => D.parseAnswer('salom'), /JSON topilmadi/);
-    assert.throws(() => D.parseAnswer('{"kind":"sphere"}'), /revolve/);
+    assert.throws(() => D.parseAnswer('{"kind":"sphere"}'), /csg/);
     assert.throws(() => D.parseAnswer({ ...plate, thickness: 0 }), /qalinligi/);
     assert.throws(() => D.parseAnswer({ ...plate, outline: [[0, 0], [10, 10], [10, 0], [0, 10]] }), /kesib/);
     assert.throws(() => D.parseAnswer({ kind: 'revolve', profile: [[0, 0], [-5, 0], [0, 10]] }), /manfiy/);

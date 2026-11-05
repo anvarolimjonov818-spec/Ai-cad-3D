@@ -9,7 +9,7 @@
 
     const DENSITY = { plastic: 1.24, aluminum: 2.70, gold: 8.50 };  // g/cm³ (PLA, Al, brass)
     const MATERIALS = {
-        plastic: { color: 0xf1f5f9, roughness: 0.35, metalness: 0.05 },
+        plastic: { color: 0xe2e8f0, roughness: 0.45, metalness: 0.05 },
         aluminum: { color: 0xc0caf5, roughness: 0.3, metalness: 0.85 },
         gold: { color: 0xd4af37, roughness: 0.2, metalness: 0.9 }
     };
@@ -56,8 +56,8 @@
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
 
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x334155, 0.75));
-        const key = new THREE.DirectionalLight(0xffffff, 0.9);
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x334155, 0.55));
+        const key = new THREE.DirectionalLight(0xffffff, 1.0);
         key.position.set(1, 1.6, 1.2);
         scene.add(key);
         const rim = new THREE.DirectionalLight(0x7dd3fc, 0.35);
@@ -88,14 +88,23 @@
             wireframe: state.wireframe,
             side: THREE.DoubleSide,          // shows the inside when sectioned
             clippingPlanes: state.section ? [sectionPlane] : [],
+            polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,   // keeps edge lines on top
             flatShading: false
         }));
     }
 
+    let edges = null;
+    const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.85 });
+
     function setGeometry(geometry) {
         if (mesh) { modelGroup.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+        if (edges) { modelGroup.remove(edges); edges.geometry.dispose(); }
         mesh = new THREE.Mesh(geometry, makeMaterial());
         modelGroup.add(mesh);
+        // CAD-style feature edges (sharp creases only) make flat white faces readable
+        edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 25), edgeMaterial);
+        edges.visible = !state.wireframe;
+        modelGroup.add(edges);
         geometry.computeBoundingBox();
         rebuildGrid(geometry.boundingBox);
         rebuildDims(geometry.boundingBox);
@@ -202,6 +211,8 @@
         if (!mesh) return;
         mesh.material.clippingPlanes = state.section ? [sectionPlane] : [];
         mesh.material.needsUpdate = true;
+        edgeMaterial.clippingPlanes = state.section ? [sectionPlane] : [];
+        edgeMaterial.needsUpdate = true;
         if (!state.section) return;
         const bb = mesh.geometry.boundingBox;
         const axis = $('section-axis').value;
@@ -226,7 +237,15 @@
     function rebuild(opts) {
         opts = opts || {};
         if (state.preset === 'contour' && state.contour && state.contour.mode === 'revolve') $('dim-width').value = $('dim-length').value;
-        if (state.preset === 'drawing') return showSpec(state.drawing.spec, state.drawing.spec.name || 'chizma', opts);
+        if (state.preset === 'drawing') {
+            showSpec(state.drawing.spec, state.drawing.spec.name || 'chizma', opts)
+                .then(() => {
+                    if (state.report && !state.report.watertight) toast("Model yopiq chiqmadi — Claude'dan geometriyani qayta tekshirishni so'rang", true);
+                    else toast('3D model chizma asosida yaratildi');
+                })
+                .catch(err => renderMessages($('drawing-messages'), [['error', err.message]]));
+            return;
+        }
         const dims = readDims();
         const { errors, warnings } = G.validate(state.preset, dims);
         renderMessages($('validation-messages'), errors.map(e => ['error', e]).concat(warnings.map(w => ['warn', w])));
@@ -246,10 +265,34 @@
         }
     }
 
-    function showSpec(spec, name, opts) {
+    const MANIFOLD_URL = 'https://cdn.jsdelivr.net/npm/manifold-3d@3.5.4/manifold.js';
+    let manifoldPromise = null;
+    function loadManifold() {
+        if (!manifoldPromise) {
+            manifoldPromise = import(MANIFOLD_URL)
+                .then(mod => mod.default())
+                .then(wasm => { wasm.setup(); return wasm; })
+                .catch(err => { manifoldPromise = null; throw new Error("3D yadro (manifold) yuklanmadi — internetni tekshiring: " + err.message); });
+        }
+        return manifoldPromise;
+    }
+
+    let showToken = 0;
+    async function showSpec(spec, name, opts) {
+        const token = ++showToken;
         try {
             state.spec = spec;
-            const geo = M.specToGeometry(THREE, spec);
+            let geo;
+            if (spec.kind === 'csg') {
+                busy(true, '3D model yig\'ilmoqda...');
+                const built = window.CadCSG.build(await loadManifold(), spec);
+                if (token !== showToken) return;      // a newer model was requested meanwhile
+                geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(built.positions, 3));
+                geo.computeVertexNormals();
+            } else {
+                geo = M.specToGeometry(THREE, spec);
+            }
             state.soup = geo.attributes.position.array;
             state.modelName = name.replace(/[^A-Za-z0-9_-]+/g, '_') || 'model';
             setGeometry(geo);
@@ -258,6 +301,9 @@
         } catch (err) {
             console.error(err);
             setStatus('error', err.message);
+            throw err;
+        } finally {
+            if (spec.kind === 'csg') busy(false);
         }
     }
 
@@ -559,8 +605,6 @@
         renderMessages($('drawing-messages'), (warnings || []).map(w => ['warn', w]));
         $$('.btn-chip[data-type="drawing"]')[0].classList.remove('hidden');
         selectPreset('drawing', true);
-        if (state.report && !state.report.watertight) toast("Model yopiq chiqmadi — Claude'dan geometriyani qayta tekshirishni so'rang", true);
-        else toast('3D model chizma asosida yaratildi');
     }
 
     async function copyPrompt() {
@@ -696,7 +740,10 @@
             e.currentTarget.classList.toggle('active', state[key]);
             fn();
         });
-        toggle('btn-toggle-wireframe', 'wireframe', () => { if (mesh) mesh.material.wireframe = state.wireframe; });
+        toggle('btn-toggle-wireframe', 'wireframe', () => {
+            if (mesh) mesh.material.wireframe = state.wireframe;
+            if (edges) edges.visible = !state.wireframe;
+        });
         toggle('btn-toggle-grid', 'grid', () => { if (gridHelper) gridHelper.visible = state.grid; });
         toggle('btn-toggle-dims', 'dims', () => { if (dimsGroup) dimsGroup.visible = state.dims; });
         toggle('btn-toggle-section', 'section', updateSection);

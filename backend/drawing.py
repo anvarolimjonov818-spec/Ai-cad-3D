@@ -1,4 +1,6 @@
-"""Engineering drawing (image / PDF) -> part spec, using Claude vision.
+"""Engineering drawing (image / PDF) -> part spec, using Claude vision (paid API mode).
+
+The free mode does the same through claude.ai copy/paste (js/drawing.js).
 
 Claude reads the views and dimensions on the drawing and returns a spec in the
 same format the browser and CadQuery use (see js/geometry.js). The spec is then
@@ -9,6 +11,8 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
+from pathlib import Path
 from typing import Any
 
 try:
@@ -20,37 +24,44 @@ MODEL = os.environ.get("AICAD_MODEL", "claude-opus-5-5")
 MAX_BYTES = 20 * 1024 * 1024
 IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
-_POINT = {
+_UV = {"type": "array", "items": {"type": "number"}}
+_FEATURE = {
     "type": "object",
-    "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
-    "required": ["a", "b"],
+    "properties": {
+        "op": {"type": "string", "enum": ["add", "cut"]},
+        "shape": {"type": "string", "enum": ["prism", "cylinder", "regular_prism", "hull", "revolve"]},
+        "axis": {"type": "string", "enum": ["x", "y", "z"]},
+        "from": {"type": "number"},
+        "to": {"type": "number"},
+        "outline": {"type": "array", "items": _UV, "description": "prism only, else []"},
+        "profile": {"type": "array", "items": _UV, "description": "revolve only, else []"},
+        "center": _UV,
+        "diameter": {"type": "number", "description": "cylinder / regular_prism, else 0"},
+        "sides": {"type": "integer", "description": "regular_prism only, else 0"},
+        "rotation_deg": {"type": "number"},
+        "circles": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"center": _UV, "diameter": {"type": "number"}},
+                "required": ["center", "diameter"],
+                "additionalProperties": False,
+            },
+            "description": "hull only, else []",
+        },
+        "label": {"type": "string"},
+    },
+    "required": ["op", "shape", "axis", "from", "to", "outline", "profile", "center", "diameter", "sides",
+                 "rotation_deg", "circles", "label"],
     "additionalProperties": False,
 }
 
 SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "part_name": {"type": "string", "description": "Short name of the part, e.g. 'Flanes', 'Val', 'Vtulka'."},
-        "kind": {"type": "string", "enum": ["revolve", "extrude"]},
-        "profile": {
-            "type": "array", "items": _POINT,
-            "description": "revolve only: closed half-section polygon, a = radius (>= 0), b = axial position, mm. Empty for extrude.",
-        },
-        "outline": {
-            "type": "array", "items": _POINT,
-            "description": "extrude only: closed outer contour of the plan view, a = x, b = y, mm, centred on the origin. Empty for revolve.",
-        },
-        "holes": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "diameter": {"type": "number"}},
-                "required": ["x", "y", "diameter"],
-                "additionalProperties": False,
-            },
-            "description": "extrude only: through holes in the same plan-view coordinates.",
-        },
-        "thickness": {"type": "number", "description": "extrude only: plate thickness in mm (0 for revolve)."},
+        "part_name": {"type": "string"},
+        "kind": {"type": "string", "enum": ["csg"]},
+        "features": {"type": "array", "items": _FEATURE},
         "dimensions": {
             "type": "array",
             "items": {
@@ -59,37 +70,27 @@ SCHEMA: dict[str, Any] = {
                 "required": ["label", "value_mm"],
                 "additionalProperties": False,
             },
-            "description": "Every dimension read from the drawing that was used.",
         },
-        "assumptions": {
-            "type": "array", "items": {"type": "string"},
-            "description": "Anything assumed, guessed, simplified or left out (chamfers, threads, cross holes...).",
-        },
+        "assumptions": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
     },
-    "required": ["part_name", "kind", "profile", "outline", "holes", "thickness", "dimensions", "assumptions", "confidence"],
+    "required": ["part_name", "kind", "features", "dimensions", "assumptions", "confidence"],
     "additionalProperties": False,
 }
 
-SYSTEM = """You read mechanical engineering drawings (ESKD/GOST, ISO or ANSI) and turn them into a simple solid model.
 
-The modeller supports exactly two kinds of part:
-1. revolve - a body of rotation (shaft, bushing, pin, flange disc, pulley, nut blank). Give the half-section as a
-   closed polygon of (radius, axial position) points in mm: radius >= 0, the axis is radius 0, the part starts at
-   axial position 0. Include steps, grooves, chamfers (as straight segments) and axial bores (an inner radius).
-   Start the polygon on the axis or on the bore and walk around the section once without crossing itself.
-2. extrude - a prismatic plate: the plan-view outer contour (x, y in mm, centred on the origin, counter-clockwise,
-   arcs and fillets approximated with enough points to look round) extruded by `thickness`, with circular through
-   holes at (x, y) with their diameter.
+def _load_prompt() -> str:
+    """The drawing prompt lives in js/drawing.js so the free (claude.ai) and API modes stay identical."""
+    src = (Path(__file__).resolve().parent.parent / "js" / "drawing.js").read_text(encoding="utf-8")
+    m = re.search(r"const PROMPT = `(.*?)`;", src, re.S)
+    if not m:
+        raise RuntimeError("PROMPT not found in js/drawing.js")
+    return m.group(1).replace("\\`", "`").replace("\\\\", "\\")
 
-Rules:
-- Use only dimensions written on the drawing. Do not measure pixels unless a dimension is missing, and then say
-  so in `assumptions` and set confidence to low.
-- Respect dimension chains, symmetry, Ø/R/× (e.g. "4 отв. Ø10", "4x Ø10") and the scale note.
-- If the part has features the two kinds cannot express (threads, keyways, cross holes, pockets, several bodies),
-  model the closest supported shape and list every omitted feature in `assumptions`.
-- Fill the unused fields with empty arrays and thickness 0.
-- Write `part_name` and `assumptions` in Uzbek (Latin script)."""
+
+SYSTEM = _load_prompt() + (
+    "\n\nYou are called through the API: the answer format is enforced by a JSON schema, so return only the JSON object."
+    " Every feature must contain every field; use [] / 0 / \"\" for fields its shape does not use.")
 
 
 class DrawingError(Exception):
@@ -114,6 +115,28 @@ def _content_block(data: bytes, media_type: str) -> dict[str, Any]:
 def to_spec(result: dict[str, Any]) -> dict[str, Any]:
     """Convert the model's JSON into the shared spec format."""
     name = result.get("part_name") or "chizma"
+    if result["kind"] == "csg":
+        features = []
+        for f in result.get("features") or []:
+            shape = f.get("shape")
+            clean = {"op": f.get("op", "add"), "shape": shape, "label": f.get("label", "")}
+            if shape == "revolve":
+                clean.update(profile=f["profile"], center=f.get("center") or [0, 0])
+            else:
+                clean.update(axis=f.get("axis", "z"), **{"from": f["from"]}, to=f["to"])
+                if shape == "prism":
+                    clean["outline"] = f["outline"]
+                elif shape == "cylinder":
+                    clean.update(center=f.get("center") or [0, 0], diameter=f["diameter"])
+                elif shape == "regular_prism":
+                    clean.update(center=f.get("center") or [0, 0], diameter=f["diameter"],
+                                 sides=f["sides"], rotation_deg=f.get("rotation_deg", 0))
+                elif shape == "hull":
+                    clean["circles"] = f["circles"]
+            features.append(clean)
+        if not features:
+            raise DrawingError("Chizmadan birorta ham element olinmadi")
+        return {"kind": "csg", "name": name, "features": features}
     if result["kind"] == "revolve":
         profile = [[float(p["a"]), float(p["b"])] for p in result["profile"]]
         if len(profile) < 3:
