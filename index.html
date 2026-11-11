@@ -63,6 +63,7 @@
                         <label class="checkbox-container"><input type="checkbox" id="gemini-remember" checked> <span>Kalitni shu brauzerda eslab qolish</span></label>
                         <label class="field-label" for="gemini-model">Model</label>
                         <select class="select" id="gemini-model"><option value="">— avval kalitni tekshiring —</option></select>
+                        <label class="checkbox-container"><input type="checkbox" id="gemini-fast" checked> <span>Tezkor rejim (rasmni siqish, yengil tahlil — tezroq va kamroq limit)</span></label>
                     </div>
 
                     <div id="drawing-upload">
@@ -229,6 +230,7 @@
                     <div class="loading-overlay" id="loading-overlay">
                         <div class="spinner"></div>
                         <div class="loading-text" id="loading-step-text">Ishlanmoqda...</div>
+                        <button class="btn btn-secondary btn-sm hidden" id="btn-cancel-busy" type="button">Bekor qilish</button>
                     </div>
                 </div>
 

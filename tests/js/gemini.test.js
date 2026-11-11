@@ -84,3 +84,67 @@ test('analyzeResilient does not retry a bad key', async () => {
     await assert.rejects(Gm.analyzeResilient({ key: 'k', model: 'a', models: ['a', 'b'], file: { mimeType: 'image/png', base64: 'x' }, prompt: 'p', fetchFn: f, retryDelays: [1] }), /kalit/);
     assert.equal(calls, 1);
 });
+
+test('thinkingConfigFor selects version-appropriate fast settings', () => {
+    assert.equal(Gm.thinkingConfigFor('gemini-3.5-flash', false), null);
+    assert.deepEqual(Gm.thinkingConfigFor('gemini-3.5-flash', true), { thinkingLevel: 'low' });
+    assert.deepEqual(Gm.thinkingConfigFor('gemini-2.5-flash', true), { thinkingBudget: 512 });
+    assert.deepEqual(Gm.thinkingConfigFor('gemini-2.5-pro', true), { thinkingBudget: 1024 });
+    assert.equal(Gm.thinkingConfigFor('gemini-2.0-flash', true), null);
+});
+
+test('analyze fast mode sends thinkingConfig and retries without it if model rejects thinkingConfig', async () => {
+    let call = 0;
+    const f = fakeFetch(() => {
+        call++;
+        if (call === 1) return { status: 400, body: { error: { message: 'thinkingLevel is not supported on this model' } } };
+        return { body: { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"kind":"csg"}' }] } }] } };
+    });
+    const text = await Gm.analyze({ key: 'k', model: 'gemini-3.5-flash', file: { mimeType: 'image/jpeg', base64: 'QUJD' }, prompt: 'P', fast: true, fetchFn: f });
+    assert.equal(text, '{"kind":"csg"}');
+    assert.equal(f.calls.length, 2);
+    assert.deepEqual(JSON.parse(f.calls[0].init.body).generationConfig.thinkingConfig, { thinkingLevel: 'low' });
+    assert.equal(JSON.parse(f.calls[1].init.body).generationConfig.thinkingConfig, undefined);
+});
+
+test('analyzeResilient waits for 429 cooldown and retries to succeed', async () => {
+    let calls = 0;
+    const f = fakeFetch(() => {
+        calls++;
+        if (calls <= 2) return { status: 429, body: { error: { message: 'Please retry in 42s' } } };
+        return { body: { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"ok":2}' }] } }] } };
+    });
+    const status = [];
+    const r = await Gm.analyzeResilient({
+        key: 'k', model: 'gemini-a', models: ['gemini-a', 'gemini-b'],
+        file: { mimeType: 'image/png', base64: 'x' }, prompt: 'p',
+        fetchFn: f, retryDelays: [1], quotaDelays: [10], onStatus: m => status.push(m)
+    });
+    assert.equal(r.text, '{"ok":2}');
+    assert.equal(r.model, 'gemini-a');
+    assert.equal(calls, 3);
+    assert.ok(status.some(m => /429/.test(m)));
+});
+
+test('analyzeResilient skips cooldown wait when all models hit PerDay quota and supports abort', async () => {
+    let calls = 0;
+    const fDaily = fakeFetch(() => {
+        calls++;
+        return { status: 429, body: { error: { message: 'Quota exceeded for GenerateRequestsPerDay' } } };
+    });
+    await assert.rejects(Gm.analyzeResilient({
+        key: 'k', model: 'gemini-a', models: ['gemini-a'],
+        file: { mimeType: 'image/png', base64: 'x' }, prompt: 'p',
+        fetchFn: fDaily, quotaDelays: [5000]
+    }), /limit tugadi/);
+    assert.equal(calls, 1);
+
+    const ctrl = new AbortController();
+    const f429 = fakeFetch(() => ({ status: 429, body: { error: { message: 'RPM limit' } } }));
+    setTimeout(() => ctrl.abort(), 15);
+    await assert.rejects(Gm.analyzeResilient({
+        key: 'k', model: 'gemini-a', models: ['gemini-a'],
+        file: { mimeType: 'image/png', base64: 'x' }, prompt: 'p',
+        fetchFn: f429, quotaDelays: [5000], signal: ctrl.signal
+    }), err => err.name === 'AbortError');
+});

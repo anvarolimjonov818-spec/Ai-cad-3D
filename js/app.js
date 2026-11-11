@@ -360,9 +360,12 @@
         toastTimer = setTimeout(() => { t.className = 'toast'; }, 3500);
     }
 
-    function busy(on, text) {
+    let busyCancel = null;
+    function busy(on, text, onCancel) {
         $('loading-overlay').classList.toggle('active', on);
         if (text) $('loading-step-text').textContent = text;
+        busyCancel = on && onCancel ? onCancel : null;
+        $('btn-cancel-busy').classList.toggle('hidden', !busyCancel);
     }
 
     function selectPreset(type, fit) {
@@ -601,7 +604,9 @@
 
     // ------------------------------------------- Gemini (free, automatic)
 
-    const GEMINI_KEY = 'aicad.gemini.key', GEMINI_MODEL = 'aicad.gemini.model';
+    const GEMINI_KEY = 'aicad.gemini.key', GEMINI_MODEL = 'aicad.gemini.model', GEMINI_FAST = 'aicad.gemini.fast';
+    const geminiCache = new Map();
+    let geminiBusy = false;
     const store = {
         get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
         set(k, v) {
@@ -613,7 +618,12 @@
     };
 
     function updateGeminiButton() {
-        $('btn-gemini').disabled = !($('gemini-key').value.trim() && $('gemini-model').value && state.drawingFile);
+        $('btn-gemini').disabled = geminiBusy || !($('gemini-key').value.trim() && $('gemini-model').value && state.drawingFile);
+    }
+
+    function cacheGemini(key, value) {
+        if (geminiCache.size >= 20) geminiCache.delete(geminiCache.keys().next().value);
+        geminiCache.set(key, value);
     }
 
     async function checkGeminiKey(silent) {
@@ -642,31 +652,62 @@
     }
 
     async function runGemini() {
-        const key = $('gemini-key').value.trim(), model = $('gemini-model').value;
-        if (!state.drawingFile) { toast('Avval chizmani yuklang', true); return; }
+        if (geminiBusy) return;
+        const key = $('gemini-key').value.trim(), model = $('gemini-model').value, fast = $('gemini-fast').checked;
+        const f = state.drawingFile;
+        if (!f) { toast('Avval chizmani yuklang', true); return; }
+        const note = $('drawing-note').value.trim();
+        const cacheKey = `${f.name}|${f.size}|${f.lastModified}|${note}|${model}|${fast}`;
         renderMessages($('drawing-messages'), []);
-        busy(true, "Gemini chizmani o'qiyapti... (10–60 soniya)");
+        const cached = geminiCache.get(cacheKey);
+        if (cached) {
+            $('drawing-answer').value = cached.text;
+            const { spec, analysis, warnings } = D.parseAnswer(cached.text);
+            analysis.model = cached.model;
+            useDrawing({ spec, analysis }, warnings);
+            toast('Keshdan olindi (API limiti sarflanmadi)');
+            return;
+        }
+        geminiBusy = true;
+        updateGeminiButton();
+        const ctrl = new AbortController();
+        const t0 = performance.now();
+        busy(true, fast ? "Rasm tayyorlanmoqda va Gemini tahlil qilyapti..." : "Gemini chizmani o'qiyapti... (10–60 soniya)", () => ctrl.abort());
         let text = '';
         try {
-            const file = await window.CadGemini.readFile(state.drawingFile);
+            const file = await window.CadGemini.readFile(f, { maxSide: fast ? 1600 : 2400 });
+            if (ctrl.signal.aborted) throw Object.assign(new Error('Tahlil bekor qilindi'), { name: 'AbortError' });
+            if (file.resized) {
+                $('loading-step-text').textContent = `Gemini tahlil qilyapti... (${Math.round(file.origBytes / 1024)} KB → ${Math.round(file.sentBytes / 1024)} KB)`;
+            }
             const models = Array.from($('gemini-model').options).map(o => o.value).filter(Boolean);
             const res = await window.CadGemini.analyzeResilient({
-                key, model, models, file, prompt: D.buildPrompt($('drawing-note').value),
+                key, model, models, file, fast, signal: ctrl.signal, prompt: D.buildPrompt(note),
                 onStatus: msg => { $('loading-step-text').textContent = msg; }
             });
             text = res.text;
-            if (res.model !== model) toast(`${model} band edi — ${res.model} modeli ishlatildi`);
+            const sec = ((performance.now() - t0) / 1000).toFixed(1);
             $('drawing-answer').value = text;           // visible in the manual tab for checking / editing
             const { spec, analysis, warnings } = D.parseAnswer(text);
             analysis.model = res.model;
+            cacheGemini(cacheKey, { text, model: res.model });
+            if (res.model !== model) cacheGemini(`${f.name}|${f.size}|${f.lastModified}|${note}|${res.model}|${fast}`, { text, model: res.model });
             busy(false);
             useDrawing({ spec, analysis }, warnings);
+            toast(res.model !== model ? `${model} band edi — ${res.model} ishlatildi (${sec} s)` : `Tayyor (${sec} s)`);
         } catch (err) {
-            console.error(err);
             busy(false);
+            if (err && err.name === 'AbortError') {
+                toast('Tahlil bekor qilindi');
+                return;
+            }
+            console.error(err);
             const msgs = [['error', err.message]];
             if (text) msgs.push(['warn', "Gemini javobi \"Qo'lda (chat)\" yorlig'idagi maydonga qo'yildi — u yerda tuzatib, qayta yasashingiz mumkin."]);
             renderMessages($('drawing-messages'), msgs);
+        } finally {
+            geminiBusy = false;
+            updateGeminiButton();
         }
     }
 
@@ -886,7 +927,10 @@
         $('gemini-key').addEventListener('input', updateGeminiButton);
         $('gemini-model').addEventListener('change', () => { store.set(GEMINI_MODEL, $('gemini-model').value); updateGeminiButton(); });
         $('gemini-remember').addEventListener('change', () => store.set(GEMINI_KEY, $('gemini-remember').checked ? $('gemini-key').value.trim() : ''));
+        if (store.get(GEMINI_FAST) === '0') $('gemini-fast').checked = false;
+        $('gemini-fast').addEventListener('change', () => store.set(GEMINI_FAST, $('gemini-fast').checked ? '1' : '0'));
         $('btn-gemini').addEventListener('click', runGemini);
+        $('btn-cancel-busy').addEventListener('click', () => { if (busyCancel) busyCancel(); });
         const savedKey = store.get(GEMINI_KEY);
         if (savedKey) { $('gemini-key').value = savedKey; checkGeminiKey(true); }
         $('btn-server-check').addEventListener('click', serverCheck);
