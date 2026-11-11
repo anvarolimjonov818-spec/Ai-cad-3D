@@ -588,6 +588,7 @@
             : drawingReady ? "Chizma Claude'ga (Anthropic API) yuboriladi va tahlil qilinadi."
             : "Serverda ANTHROPIC_API_KEY o'rnatilmagan — chizma tahlili o'chirilgan.";
         $('tab-server').classList.toggle('hidden', !drawingReady);
+        initGemini();
     }
 
     // ------------------------------------------------------- drawing → 3D
@@ -602,23 +603,20 @@
         updateGeminiButton();
     }
 
-    // ------------------------------------------- Gemini (free, automatic)
+    // ------------------------------------------- Gemini (server-side proxy)
 
-    const GEMINI_KEY = 'aicad.gemini.key', GEMINI_MODEL = 'aicad.gemini.model', GEMINI_FAST = 'aicad.gemini.fast';
     const geminiCache = new Map();
     let geminiBusy = false;
-    const store = {
-        get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } },
-        set(k, v) {
-            try {
-                if (v) localStorage.setItem(k, v);
-                else localStorage.removeItem(k);
-            } catch (e) { /* storage blocked */ }
-        }
-    };
+    let geminiServer = { checked: false, configured: false, models: [], error: '' };
+    let geminiCheckPromise = null;
+
+    function geminiEndpoint() {
+        const base = state.api && state.api.base ? state.api.base : '';
+        return base + '/api/gemini';
+    }
 
     function updateGeminiButton() {
-        $('btn-gemini').disabled = geminiBusy || !($('gemini-key').value.trim() && $('gemini-model').value && state.drawingFile);
+        $('btn-gemini').disabled = geminiBusy || !state.drawingFile;
     }
 
     function cacheGemini(key, value) {
@@ -626,67 +624,47 @@
         geminiCache.set(key, value);
     }
 
-    function setGeminiKeyCollapsed(collapsed, key) {
-        const k = (key || '').trim();
-        const hide = Boolean(collapsed && k);
-        $('gemini-key-box').classList.toggle('hidden', hide);
-        $('gemini-key-saved').classList.toggle('hidden', !hide);
-        if (hide) $('gemini-key-mask').textContent = k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : '••••';
-    }
-
-    function clearGeminiKey() {
-        store.set(GEMINI_KEY, '');
-        store.set(GEMINI_MODEL, '');
-        $('gemini-key').value = '';
-        $('gemini-model').innerHTML = '<option value="">— avval kalitni tekshiring —</option>';
-        $('gemini-status').textContent = "Kalit faqat sizning brauzeringizda saqlanadi va faqat Google'ga yuboriladi. Bepul tarifda Google ma'lumotlardan mahsulotlarini yaxshilash uchun foydalanishi mumkin — maxfiy chizmalarni yubormang.";
-        renderMessages($('drawing-messages'), []);
-        setGeminiKeyCollapsed(false);
-        updateGeminiButton();
-        toast('Saqlangan Gemini kalit o\'chirildi');
-    }
-
-    async function checkGeminiKey(silent) {
-        const key = $('gemini-key').value.trim();
-        if (!key) { if (!silent) toast('Avval Gemini API kalitini kiriting', true); return; }
-        const btn = $('btn-gemini-check');
-        btn.disabled = true;
-        btn.textContent = '...';
-        try {
-            const models = await window.CadGemini.listModels(key);
-            const sel = $('gemini-model');
-            const saved = store.get(GEMINI_MODEL);
-            sel.innerHTML = models.map(m => `<option value="${m.id}">${m.label.replace(/</g, '&lt;')} (${m.id})</option>`).join('');
-            if (saved && models.some(m => m.id === saved)) sel.value = saved;
-            store.set(GEMINI_KEY, $('gemini-remember').checked ? key : '');
-            store.set(GEMINI_MODEL, sel.value);
-            setGeminiKeyCollapsed(true, key);
-            renderMessages($('drawing-messages'), []);
-            if (!silent) toast(`Kalit saqlandi — ${models.length} ta model topildi`);
-            $('gemini-status').textContent = 'Tanlangan model: ' + sel.value + '. Bepul tarifda kunlik limit bor; tugasa boshqa Flash modelni tanlang.';
-        } catch (err) {
-            if (/kalit noto'g'ri|ruxsat yo'q|topilmadi/i.test(err.message)) setGeminiKeyCollapsed(false);
-            renderMessages($('drawing-messages'), [['error', err.message]]);
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Tekshirish';
-            updateGeminiButton();
-        }
+    async function initGemini(force) {
+        if (geminiCheckPromise && !force) return geminiCheckPromise;
+        geminiCheckPromise = (async () => {
+            try {
+                const info = await window.CadGemini.listServerModels(geminiEndpoint());
+                geminiServer = {
+                    checked: true,
+                    configured: !!info.configured,
+                    models: Array.isArray(info.models) ? info.models : [],
+                    error: info.error || ''
+                };
+                if (!geminiServer.configured) {
+                    $('gemini-status').textContent = "Serverda GEMINI_API_KEY hali sozlanmagan (Vercel Environment Variables -> GEMINI_API_KEY).";
+                } else if (geminiServer.error) {
+                    $('gemini-status').textContent = geminiServer.error;
+                } else {
+                    $('gemini-status').textContent = "Chizmani (PNG, JPEG, WEBP yoki PDF) yuklang — AI avtomatik 3D model yaratadi.";
+                }
+            } catch (err) {
+                geminiServer = { checked: false, configured: false, models: [], error: err.message || '' };
+                $('gemini-status').textContent = "Chizmani (PNG, JPEG, WEBP yoki PDF) yuklang — AI avtomatik 3D model yaratadi.";
+            } finally {
+                updateGeminiButton();
+            }
+            return geminiServer;
+        })();
+        return geminiCheckPromise;
     }
 
     async function runGemini() {
         if (geminiBusy) return;
-        const key = $('gemini-key').value.trim(), model = $('gemini-model').value, fast = $('gemini-fast').checked;
         const f = state.drawingFile;
         if (!f) { toast('Avval chizmani yuklang', true); return; }
         const note = $('drawing-note').value.trim();
-        const cacheKey = `${f.name}|${f.size}|${f.lastModified}|${note}|${model}|${fast}`;
+        const cacheKey = `${f.name}|${f.size}|${f.lastModified}|${note}`;
         renderMessages($('drawing-messages'), []);
         const cached = geminiCache.get(cacheKey);
         if (cached) {
             $('drawing-answer').value = cached.text;
             const { spec, analysis, warnings } = D.parseAnswer(cached.text);
-            analysis.model = cached.model;
+            if (cached.model) analysis.model = cached.model;
             useDrawing({ spec, analysis }, warnings);
             toast('Keshdan olindi (API limiti sarflanmadi)');
             return;
@@ -695,29 +673,38 @@
         updateGeminiButton();
         const ctrl = new AbortController();
         const t0 = performance.now();
-        busy(true, fast ? "Rasm tayyorlanmoqda va Gemini tahlil qilyapti..." : "Gemini chizmani o'qiyapti... (10–60 soniya)", () => ctrl.abort());
+        busy(true, "Gemini chizmani o'qiyapti... (10–60 soniya)", () => ctrl.abort());
         let text = '';
         try {
-            const file = await window.CadGemini.readFile(f, { maxSide: fast ? 1600 : 2400 });
+            const srv = await initGemini();
+            if (srv.checked && !srv.configured) {
+                throw new Error("Serverda GEMINI_API_KEY o'rnatilmagan. Sayt egasi Vercel Settings -> Environment Variables ga GEMINI_API_KEY qo'shishi kerak.");
+            }
+            const file = await window.CadGemini.readFile(f, { maxSide: 1600, minBytes: 400 * 1024 });
             if (ctrl.signal.aborted) throw Object.assign(new Error('Tahlil bekor qilindi'), { name: 'AbortError' });
             if (file.resized) {
                 $('loading-step-text').textContent = `Gemini tahlil qilyapti... (${Math.round(file.origBytes / 1024)} KB → ${Math.round(file.sentBytes / 1024)} KB)`;
             }
-            const models = Array.from($('gemini-model').options).map(o => o.value).filter(Boolean);
+            const models = (srv.models || []).map(m => m.id).filter(Boolean);
             const res = await window.CadGemini.analyzeResilient({
-                key, model, models, file, fast, signal: ctrl.signal, prompt: D.buildPrompt(note),
+                endpoint: geminiEndpoint(),
+                model: models[0] || '',
+                models,
+                file,
+                fast: false,
+                signal: ctrl.signal,
+                prompt: D.buildPrompt(note),
                 onStatus: msg => { $('loading-step-text').textContent = msg; }
             });
             text = res.text;
             const sec = ((performance.now() - t0) / 1000).toFixed(1);
             $('drawing-answer').value = text;           // visible in the manual tab for checking / editing
             const { spec, analysis, warnings } = D.parseAnswer(text);
-            analysis.model = res.model;
+            if (res.model) analysis.model = res.model;
             cacheGemini(cacheKey, { text, model: res.model });
-            if (res.model !== model) cacheGemini(`${f.name}|${f.size}|${f.lastModified}|${note}|${res.model}|${fast}`, { text, model: res.model });
             busy(false);
             useDrawing({ spec, analysis }, warnings);
-            toast(res.model !== model ? `${model} band edi — ${res.model} ishlatildi (${sec} s)` : `Tayyor (${sec} s)`);
+            toast(`Tayyor (${sec} s)`);
         } catch (err) {
             busy(false);
             if (err && err.name === 'AbortError') {
@@ -790,7 +777,6 @@
 
     function setDrawingMode(mode) {
         $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
-        $('drawing-gemini').classList.toggle('hidden', mode !== 'gemini');
         $('drawing-gemini-run').classList.toggle('hidden', mode !== 'gemini');
         $('drawing-upload').classList.toggle('hidden', mode === 'free');
         $('drawing-free').classList.toggle('hidden', mode !== 'free');
@@ -945,20 +931,8 @@
         $('btn-copy-prompt').addEventListener('click', copyPrompt);
         $('btn-build-answer').addEventListener('click', buildFromAnswer);
         $$('.tab').forEach(t => t.addEventListener('click', () => setDrawingMode(t.dataset.mode)));
-        $('btn-gemini-check').addEventListener('click', () => checkGeminiKey(false));
-        $('btn-gemini-edit').addEventListener('click', () => { setGeminiKeyCollapsed(false); $('gemini-key').focus(); $('gemini-key').select(); });
-        $('btn-gemini-clear').addEventListener('click', clearGeminiKey);
-        $('gemini-key').addEventListener('change', () => checkGeminiKey(true));
-        $('gemini-key').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); checkGeminiKey(false); } });
-        $('gemini-key').addEventListener('input', updateGeminiButton);
-        $('gemini-model').addEventListener('change', () => { store.set(GEMINI_MODEL, $('gemini-model').value); updateGeminiButton(); });
-        $('gemini-remember').addEventListener('change', () => store.set(GEMINI_KEY, $('gemini-remember').checked ? $('gemini-key').value.trim() : ''));
-        if (store.get(GEMINI_FAST) === '0') $('gemini-fast').checked = false;
-        $('gemini-fast').addEventListener('change', () => store.set(GEMINI_FAST, $('gemini-fast').checked ? '1' : '0'));
         $('btn-gemini').addEventListener('click', runGemini);
         $('btn-cancel-busy').addEventListener('click', () => { if (busyCancel) busyCancel(); });
-        const savedKey = store.get(GEMINI_KEY);
-        if (savedKey) { $('gemini-key').value = savedKey; setGeminiKeyCollapsed(true, savedKey); checkGeminiKey(true); }
         $('btn-server-check').addEventListener('click', serverCheck);
 
         $('btn-example-load').addEventListener('click', () => {

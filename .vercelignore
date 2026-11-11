@@ -1,4 +1,4 @@
-# The site is static (index.html + js/ + index.css).
+# Static assets + Vercel Serverless Function (api/gemini.js).
 # The Python backend (CadQuery/trimesh) runs locally, not on Vercel.
 backend/
 tests/
@@ -6,3 +6,5 @@ node_modules/
 package.json
 package-lock.json
 *.md
+.venv/
+.env*

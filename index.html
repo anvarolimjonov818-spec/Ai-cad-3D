@@ -53,28 +53,6 @@
                     <p class="hint">O'lchamli chizmangiz bo'lsa — shu bo'limdan foydalaning.</p>
                     <textarea class="note-input" id="drawing-note" rows="2" placeholder="Izoh (ixtiyoriy): masalan, &quot;4 ta teshik Ø10, qalinligi 8 mm&quot;"></textarea>
 
-                    <div id="drawing-gemini">
-                        <div id="gemini-key-saved" class="key-saved hidden">
-                            <span class="key-saved-text"><span class="dot"></span> Gemini kalit ulangan (<code id="gemini-key-mask"></code>)</span>
-                            <div class="key-saved-actions">
-                                <button class="btn btn-secondary btn-sm" id="btn-gemini-edit" type="button">O'zgartirish</button>
-                                <button class="btn btn-secondary btn-sm" id="btn-gemini-clear" type="button" title="Saqlangan kalitni o'chirish">O'chirish</button>
-                            </div>
-                        </div>
-                        <div id="gemini-key-box">
-                            <label class="field-label" for="gemini-key">Gemini API kalit
-                                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">bepul kalit olish ↗</a></label>
-                            <div class="key-row">
-                                <input type="password" class="text-input" id="gemini-key" placeholder="AIza..." autocomplete="off" spellcheck="false">
-                                <button class="btn btn-secondary btn-sm" id="btn-gemini-check" type="button">Tekshirish</button>
-                            </div>
-                            <label class="checkbox-container"><input type="checkbox" id="gemini-remember" checked> <span>Kalitni shu brauzerda eslab qolish</span></label>
-                        </div>
-                        <label class="field-label" for="gemini-model">Model</label>
-                        <select class="select" id="gemini-model"><option value="">— avval kalitni tekshiring —</option></select>
-                        <label class="checkbox-container"><input type="checkbox" id="gemini-fast" checked> <span>Tezkor rejim (rasmni siqish, yengil tahlil — tezroq va kamroq limit)</span></label>
-                    </div>
-
                     <div id="drawing-upload">
                     <div class="upload-zone" id="drawing-zone">
                         <input type="file" id="drawing-input" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" hidden>
@@ -91,7 +69,7 @@
                         <button class="btn btn-success btn-block" id="btn-gemini" disabled>
                             <i class="fa-solid fa-wand-magic-sparkles"></i> Gemini bilan 3D yasash
                         </button>
-                        <p class="hint" id="gemini-status">Kalit faqat sizning brauzeringizda saqlanadi va faqat Google'ga yuboriladi. Bepul tarifda Google ma'lumotlardan mahsulotlarini yaxshilash uchun foydalanishi mumkin — maxfiy chizmalarni yubormang.</p>
+                        <p class="hint" id="gemini-status">Chizmani (PNG, JPEG, WEBP yoki PDF) yuklang — AI avtomatik 3D model yaratadi.</p>
                     </div>
 
                     <div id="drawing-free" class="hidden">

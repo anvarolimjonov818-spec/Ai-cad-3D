@@ -1,9 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "version": 2,
-  "builds": [
-    { "src": "index.html", "use": "@vercel/static" },
-    { "src": "index.css", "use": "@vercel/static" },
-    { "src": "js/*.js", "use": "@vercel/static" }
-  ]
+  "functions": {
+    "api/gemini.js": {
+      "maxDuration": 60
+    }
+  }
 }

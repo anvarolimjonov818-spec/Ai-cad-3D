@@ -148,3 +148,96 @@ test('analyzeResilient skips cooldown wait when all models hit PerDay quota and 
         fetchFn: f429, quotaDelays: [5000], signal: ctrl.signal
     }), err => err.name === 'AbortError');
 });
+
+test('proxy mode works without a browser API key and never retries missing server keys', async () => {
+    const infoFetch = fakeFetch(() => ({ body: { configured: true, models: [{ id: 'gemini-3.5-flash', label: 'Flash' }] } }));
+    const info = await Gm.listServerModels('/api/gemini', infoFetch);
+    assert.equal(info.configured, true);
+    assert.equal(info.models[0].id, 'gemini-3.5-flash');
+    assert.equal(infoFetch.calls[0].init.headers['x-goog-api-key'], undefined);
+
+    const okFetch = fakeFetch(() => ({ body: { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"kind":"extrude"}' }] } }] } }));
+    const out = await Gm.analyzeResilient({
+        endpoint: '/api/gemini', model: 'gemini-3.5-flash', models: ['gemini-3.5-flash'],
+        file: { mimeType: 'image/jpeg', base64: 'QUJD' }, prompt: 'P', fetchFn: okFetch
+    });
+    assert.equal(out.text, '{"kind":"extrude"}');
+    assert.equal(okFetch.calls[0].url, '/api/gemini');
+    assert.equal(okFetch.calls[0].init.headers['x-goog-api-key'], undefined);
+
+    let missingCalls = 0;
+    const missingFetch = fakeFetch(() => {
+        missingCalls++;
+        return { status: 503, body: { missingKey: true, error: { message: "Serverda GEMINI_API_KEY o'rnatilmagan" } } };
+    });
+    await assert.rejects(Gm.analyzeResilient({
+        endpoint: '/api/gemini', model: '', models: [],
+        file: { mimeType: 'image/png', base64: 'QUJD' }, prompt: 'P',
+        fetchFn: missingFetch, retryDelays: [10], quotaDelays: [10]
+    }), /GEMINI_API_KEY/);
+    assert.equal(missingCalls, 1);
+});
+
+test('api/gemini serverless handler checks env, proxies with server key, and sanitizes errors', async () => {
+    const { createHandler } = require('../../api/gemini.js');
+    const makeRes = () => {
+        const headers = {};
+        let raw = '';
+        return {
+            statusCode: 200,
+            headers,
+            setHeader(k, v) { headers[k.toLowerCase()] = v; },
+            end(s) { raw = s || ''; },
+            json() { return JSON.parse(raw || '{}'); }
+        };
+    };
+
+    const unconfigured = createHandler({ env: {} });
+    const r0 = makeRes();
+    await unconfigured({ method: 'GET' }, r0);
+    assert.equal(r0.statusCode, 200);
+    assert.deepEqual(r0.json(), { configured: false, models: [] });
+
+    const rMissingPost = makeRes();
+    await unconfigured({ method: 'POST', body: { file: { mimeType: 'image/png', base64: 'QUJD' }, prompt: 'P' } }, rMissingPost);
+    assert.equal(rMissingPost.statusCode, 503);
+    assert.equal(rMissingPost.json().missingKey, true);
+
+    const upstream = [];
+    const configured = createHandler({
+        env: { GEMINI_API_KEY: 'AIzaSECRET_KEY_123' },
+        cache: false,
+        fetchFn: async (url, init) => {
+            upstream.push({ url, init });
+            if (url.includes('/models?')) {
+                return { ok: true, status: 200, headers: new Headers(), json: async () => ({ models: MODELS }) };
+            }
+            return {
+                ok: false,
+                status: 429,
+                statusText: 'Too Many Requests',
+                headers: new Headers({ 'retry-after': '17' }),
+                json: async () => ({ error: { message: 'Quota hit for AIzaSECRET_KEY_123' } })
+            };
+        }
+    });
+
+    const rGet = makeRes();
+    await configured({ method: 'GET' }, rGet);
+    assert.equal(rGet.statusCode, 200);
+    assert.equal(rGet.json().configured, true);
+    assert.equal(rGet.json().models[0].id, 'gemini-3.5-flash');
+    assert.ok(!JSON.stringify(rGet.json()).includes('AIzaSECRET_KEY_123'));
+
+    const rPost = makeRes();
+    await configured({ method: 'POST', body: { model: '', file: { mimeType: 'image/png', base64: 'QUJD' }, prompt: 'Draw' } }, rPost);
+    assert.equal(rPost.statusCode, 429);
+    assert.equal(rPost.headers['retry-after'], '17');
+    assert.equal(rPost.headers['x-gemini-model'], 'gemini-3.5-flash');
+    assert.ok(!rPost.json().error.message.includes('AIzaSECRET_KEY_123'));
+    assert.equal(upstream[1].init.headers['x-goog-api-key'], 'AIzaSECRET_KEY_123');
+
+    const rBad = makeRes();
+    await configured({ method: 'POST', body: { model: '../evil', file: { mimeType: 'image/png', base64: 'QUJD' }, prompt: 'Draw' } }, rBad);
+    assert.equal(rBad.statusCode, 400);
+});

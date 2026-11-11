@@ -1,6 +1,6 @@
 /*
- * Gemini API client for the free, fully automatic drawing → 3D mode.
- * Runs in the browser with the user's own API key (never shipped in the site).
+ * Gemini API client for automatic drawing -> 3D mode.
+ * Supports same-origin server proxy endpoints (e.g. /api/gemini) as well as direct calls with an explicit key.
  * Uses the REST API directly: https://ai.google.dev/api
  */
 (function (root, factory) {
@@ -34,9 +34,13 @@
     async function request(fetchFn, url, key, body, signal) {
         let res;
         try {
+            const headers = Object.assign(
+                key ? { 'x-goog-api-key': key } : {},
+                body ? { 'Content-Type': 'application/json' } : {}
+            );
             const init = {
                 method: body ? 'POST' : 'GET',
-                headers: Object.assign({ 'x-goog-api-key': key }, body ? { 'Content-Type': 'application/json' } : {}),
+                headers,
                 body: body ? JSON.stringify(body) : undefined
             };
             if (signal) init.signal = signal;
@@ -48,8 +52,11 @@
         let data = {};
         try { data = await res.json(); } catch (e) { /* non-JSON error page */ }
         if (!res.ok) {
-            const msg = (data.error && data.error.message) || res.statusText;
-            if (res.status === 400 && /API key not valid|API_KEY_INVALID/i.test(msg)) throw new Error("API kalit noto'g'ri — aistudio.google.com/apikey sahifasidan nusxalang");
+            const msg = (data.error && data.error.message) || res.statusText || ('HTTP ' + res.status);
+            if (res.status === 413) throw httpError(413, 'Fayl hajmi juda katta (maks. 3 MB PDF yoki rasm)');
+            if (res.status === 400 && /API key not valid|API_KEY_INVALID/i.test(msg)) {
+                throw new Error(key ? "API kalit noto'g'ri — aistudio.google.com/apikey sahifasidan nusxalang" : "Serverdagi Gemini API kalit noto'g'ri");
+            }
             if (res.status === 400 && /location is not supported/i.test(msg)) throw new Error('Gemini API sizning hududingizda ishlamayapti');
             if (res.status === 403) throw httpError(403, 'Kalitga ruxsat yo\'q: ' + msg);
             if (res.status === 429) {
@@ -57,6 +64,11 @@
                 err.retryAfterMs = parseRetryAfterMs(res, data, msg);
                 const rawDetails = data && data.error && data.error.details ? JSON.stringify(data.error.details) : '';
                 err.isDailyQuota = /\bper\s*day\b|PerDay/i.test(msg + ' ' + rawDetails);
+                throw err;
+            }
+            if (data && data.missingKey) {
+                const err = httpError(res.status, msg);
+                err.noRetry = true;
                 throw err;
             }
             if (res.status === 503 || res.status === 500 || res.status === 502 || res.status === 504) {
@@ -117,7 +129,8 @@
         const { models, onStatus, signal } = opts;
         const delays = opts.retryDelays || [2000, 5000];
         const quotaDelays = opts.quotaDelays || [60000, 60000];
-        const order = [opts.model].concat((models || []).filter(m => m !== opts.model)).slice(0, opts.maxModels || 4);
+        const rawOrder = (opts.model ? [opts.model] : []).concat((models || []).filter(m => m && m !== opts.model));
+        const order = (rawOrder.length ? rawOrder : ['']).slice(0, opts.maxModels || 4);
 
         async function tryModelsOnce() {
             const errors = [];
@@ -131,15 +144,15 @@
                     } catch (err) {
                         if (err && err.name === 'AbortError') throw err;
                         lastErr = err;
-                        if (BUSY.includes(err.status) && attempt < delays.length) {
-                            if (onStatus) onStatus(`${model} band — ${Math.round(delays[attempt] / 1000)} s dan keyin qayta urinilmoqda...`);
+                        if (!err.noRetry && BUSY.includes(err.status) && attempt < delays.length) {
+                            if (onStatus) onStatus(`${model || 'Gemini'} band — ${Math.round(delays[attempt] / 1000)} s dan keyin qayta urinilmoqda...`);
                             await waitWithCountdown(delays[attempt], null, signal);
                             continue;
                         }
                         break;
                     }
                 }
-                if (!(BUSY.includes(lastErr.status) || lastErr.status === 429 || lastErr.status === 404)) throw lastErr;
+                if (lastErr.noRetry || !(BUSY.includes(lastErr.status) || lastErr.status === 429 || lastErr.status === 404)) throw lastErr;
                 errors.push(lastErr);
                 if (onStatus && model !== order[order.length - 1]) onStatus(`${model} ishlamadi — boshqa modelga o'tilmoqda...`);
             }
@@ -219,15 +232,14 @@
         return null;
     }
 
-    /**
-     * Send the drawing and the prompt; returns Gemini's text answer.
-     * `file` = { mimeType, base64 }.
-     */
-    async function analyze({ key, model, file, prompt, fast, signal, fetchFn }) {
-        fetchFn = fetchFn || fetch;
-        if (!key) throw new Error('Avval Gemini API kalitini kiriting');
-        if (!file || !file.base64) throw new Error('Avval chizmani yuklang');
-        const makeBody = thinking => ({
+    /** Fetch server configuration and ranked usable models from `/api/gemini`. */
+    async function listServerModels(endpoint, fetchFn) {
+        return request(fetchFn || fetch, endpoint || '/api/gemini', '', null, null);
+    }
+
+    /** Build a Google Gemini `:generateContent` JSON request body. */
+    function buildGenerateBody({ file, prompt, thinking }) {
+        return {
             contents: [{
                 role: 'user',
                 parts: [
@@ -239,16 +251,11 @@
                 { responseMimeType: 'application/json' },
                 thinking ? { thinkingConfig: thinking } : {}
             )
-        });
-        const tc = thinkingConfigFor(model, fast);
-        const url = `${BASE}/models/${encodeURIComponent(model)}:generateContent`;
-        let data;
-        try {
-            data = await request(fetchFn, url, key, makeBody(tc), signal);
-        } catch (err) {
-            if (!(tc && err.status === 400 && /thinking/i.test(err.message))) throw err;
-            data = await request(fetchFn, url, key, makeBody(null), signal);
-        }
+        };
+    }
+
+    /** Extract the non-thought text payload from a Gemini response object. */
+    function extractAnswerText(data) {
         if (data.promptFeedback && data.promptFeedback.blockReason) throw new Error('Gemini so\'rovni rad etdi: ' + data.promptFeedback.blockReason);
         const cand = (data.candidates || [])[0];
         if (!cand) throw new Error("Gemini javob qaytarmadi");
@@ -256,6 +263,37 @@
         if (cand.finishReason === 'MAX_TOKENS') throw new Error('Gemini javobi kesilib qoldi — soddaroq chizma yoki boshqa model bilan urining');
         if (!text.trim()) throw new Error('Gemini bo\'sh javob qaytardi' + (cand.finishReason ? ' (' + cand.finishReason + ')' : ''));
         return text;
+    }
+
+    /**
+     * Send the drawing and the prompt; returns Gemini's text answer.
+     * Supports server proxy (`endpoint`) or direct browser key (`key`).
+     * `file` = { mimeType, base64 }.
+     */
+    async function analyze({ key, endpoint, model, file, prompt, fast, signal, fetchFn }) {
+        fetchFn = fetchFn || fetch;
+        if (!endpoint && !key) throw new Error('Avval Gemini API kalitini kiriting');
+        if (!file || !file.base64) throw new Error('Avval chizmani yuklang');
+        if (endpoint) {
+            const payload = {
+                model: model || '',
+                file: { mimeType: file.mimeType, base64: file.base64 },
+                prompt,
+                fast: !!fast
+            };
+            const data = await request(fetchFn, endpoint, '', payload, signal);
+            return extractAnswerText(data);
+        }
+        const tc = thinkingConfigFor(model, fast);
+        const url = `${BASE}/models/${encodeURIComponent(model)}:generateContent`;
+        let data;
+        try {
+            data = await request(fetchFn, url, key, buildGenerateBody({ file, prompt, thinking: tc }), signal);
+        } catch (err) {
+            if (!(tc && err.status === 400 && /thinking/i.test(err.message))) throw err;
+            data = await request(fetchFn, url, key, buildGenerateBody({ file, prompt, thinking: null }), signal);
+        }
+        return extractAnswerText(data);
     }
 
     function readRawBase64(file) {
@@ -320,5 +358,5 @@
         return readRawBase64(file);
     }
 
-    return { listModels, rankModels, analyze, analyzeResilient, readFile, thinkingConfigFor };
+    return { listModels, listServerModels, rankModels, analyze, analyzeResilient, readFile, thinkingConfigFor, buildGenerateBody, extractAnswerText };
 });

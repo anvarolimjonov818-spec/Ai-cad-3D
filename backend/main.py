@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, model_validator
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cad  # noqa: E402
 import drawing  # noqa: E402
+import gemini as geminilib  # noqa: E402
 import mesh as meshlib  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -181,6 +182,55 @@ async def drawing_analyze(request: Request, note: str = ""):
     except Exception as e:
         raise HTTPException(422, f"Chizmadan olingan geometriya yaroqsiz: {e}")
     return result
+
+
+@app.get("/api/gemini")
+async def gemini_status():
+    api_key = geminilib.get_api_key()
+    if not api_key:
+        return JSONResponse({"configured": False, "models": []}, headers={"Cache-Control": "no-store"})
+    try:
+        models = await geminilib.list_models(api_key)
+        return JSONResponse({"configured": True, "valid": True, "models": models}, headers={"Cache-Control": "no-store"})
+    except geminilib.ProxyRequestError as e:
+        return JSONResponse(
+            {"configured": True, "valid": False, "models": [], "error": str(e)},
+            headers={"Cache-Control": "no-store"},
+        )
+    except Exception as e:
+        return JSONResponse(
+            {"configured": True, "valid": False, "models": [], "error": geminilib.sanitize_error(e, api_key)},
+            headers={"Cache-Control": "no-store"},
+        )
+
+
+@app.post("/api/gemini")
+async def gemini_generate(request: Request):
+    api_key = geminilib.get_api_key()
+    if not api_key:
+        return JSONResponse(
+            {
+                "missingKey": True,
+                "error": {"message": "Serverda GEMINI_API_KEY o'rnatilmagan."},
+            },
+            status_code=503,
+            headers={"Cache-Control": "no-store"},
+        )
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"error": {"message": "Noto'g'ri JSON so'rov"}}, status_code=400, headers={"Cache-Control": "no-store"})
+    try:
+        status, data, headers = await geminilib.generate(api_key, payload)
+        return JSONResponse(data, status_code=status, headers=headers)
+    except geminilib.ProxyRequestError as e:
+        return JSONResponse({"error": {"message": str(e)}}, status_code=e.status, headers={"Cache-Control": "no-store"})
+    except Exception as e:
+        return JSONResponse(
+            {"error": {"message": geminilib.sanitize_error(e, api_key)}},
+            status_code=502,
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 # --- static frontend (only the app files, never the repo root) ---
