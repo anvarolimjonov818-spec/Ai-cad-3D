@@ -60,10 +60,10 @@
             if (res.status === 400 && /location is not supported/i.test(msg)) throw new Error('Gemini API sizning hududingizda ishlamayapti');
             if (res.status === 403) throw httpError(403, 'Kalitga ruxsat yo\'q: ' + msg);
             if (res.status === 429) {
-                const err = httpError(429, "Bepul limit tugadi (429). Bir oz kutib qayta urining yoki boshqa modelni tanlang. " + msg.split('\n')[0]);
+                const err = httpError(429, "Bepul limit tugadi (429). Bir oz kutib qayta urining yoki \"Qo'lda (chat)\" orqali kiriting. " + msg.split('\n')[0]);
                 err.retryAfterMs = parseRetryAfterMs(res, data, msg);
                 const rawDetails = data && data.error && data.error.details ? JSON.stringify(data.error.details) : '';
-                err.isDailyQuota = /\bper\s*day\b|PerDay/i.test(msg + ' ' + rawDetails);
+                err.isDailyQuota = /\bper\s*day\b|PerDay|\blimit:\s*0\b|"quotaValue":\s*"0"/i.test(msg + ' ' + rawDetails);
                 throw err;
             }
             if (data && data.missingKey) {
@@ -121,16 +121,17 @@
     }
 
     function roundWaitMs(errs, round, quotaDelays, busyDelays, explicitQuota) {
-        const hasRetryable = errs.some(e => e.status === 429 || BUSY.includes(e.status));
-        const allDaily = errs.length > 0 && errs.every(e => e.status === 429 && e.isDailyQuota);
-        if (!hasRetryable || allDaily) return null;
-        const all5xx = !errs.some(e => e.status === 429);
-        if (all5xx) {
+        const retryableErrs = errs.filter(e => e.status === 429 || BUSY.includes(e.status));
+        if (!retryableErrs.length) return null;
+        const allDaily = retryableErrs.every(e => e.status === 429 && e.isDailyQuota);
+        if (allDaily) return null;
+        const nonDaily429 = retryableErrs.filter(e => e.status === 429 && !e.isDailyQuota);
+        if (!nonDaily429.length) {
             if (round >= busyDelays.length) return null;
             return { ms: busyDelays[round], all5xx: true };
         }
         if (round >= quotaDelays.length) return null;
-        const hintMs = Math.max(0, ...errs.map(e => e.retryAfterMs || 0));
+        const hintMs = Math.max(0, ...nonDaily429.map(e => e.retryAfterMs || 0));
         const ms = explicitQuota ? quotaDelays[round] : (hintMs > 0 ? Math.min(120000, Math.max(quotaDelays[round], hintMs + 2000)) : quotaDelays[round]);
         return { ms, all5xx: false };
     }
@@ -212,8 +213,8 @@
             const n = m.name.toLowerCase();
             let s = version(n) * 100;
             if (n.includes('flash') && !n.includes('lite')) s += 150;      // accurate full Flash models first
-            else if (n.includes('pro')) s += 80;
-            else if (n.includes('lite')) s += 10;                           // emergency lightweight fallback
+            else if (n.includes('lite')) s += 50;                           // fast free-tier fallback
+            else if (n.includes('pro')) s += 5;                             // paid-only / zero free-tier limit last
             if (/preview|exp/.test(n)) s -= 15;
             if (/latest/.test(n)) s += 1;
             return s;

@@ -625,7 +625,7 @@
 
     function orderGeminiModels(models) {
         const now = Date.now();
-        const primary = [], lite = [], cooledPrimary = [], cooledLite = [];
+        const primary = [], lite = [], pro = [], cooledPrimary = [], cooledLite = [], cooledPro = [];
         for (const m of models || []) {
             const id = typeof m === 'string' ? m : (m && m.id);
             if (!id) continue;
@@ -633,13 +633,14 @@
             const isCooled = until > now;
             if (!isCooled && until) failedGeminiModels.delete(id);
             if (/lite/i.test(id)) (isCooled ? cooledLite : lite).push(id);
+            else if (/-pro\b/i.test(id)) (isCooled ? cooledPro : pro).push(id);
             else (isCooled ? cooledPrimary : primary).push(id);
         }
         const orderedPrimary = [];
         if (lastGeminiModel && primary.includes(lastGeminiModel)) orderedPrimary.push(lastGeminiModel);
         for (const id of primary) if (!orderedPrimary.includes(id)) orderedPrimary.push(id);
         for (const id of cooledPrimary) if (!orderedPrimary.includes(id)) orderedPrimary.push(id);
-        return { primary: orderedPrimary, fallback: lite.concat(cooledLite) };
+        return { primary: orderedPrimary, fallback: lite.concat(cooledLite, pro, cooledPro) };
     }
 
     function geminiEndpoint() {
@@ -727,6 +728,7 @@
                 fast: 'medium',
                 retryDelays: [],
                 busyDelays,
+                quotaDelays: [],
                 maxModels,
                 signal: ctrl.signal,
                 prompt,
@@ -735,19 +737,21 @@
             let res, usedList = primary, usedLite = false;
             if (primary.length) {
                 try {
-                    res = await runTier(primary, [2000], 6);
+                    res = await runTier(primary, [1500], 10);
                 } catch (err) {
                     const abortOrPermanent = (err && (err.name === 'AbortError' || err.noRetry || err.status === 413 || /kalit noto'g'ri/i.test(err.message)));
                     if (abortOrPermanent || !fallback.length) throw err;
+                    const until = Date.now() + GEMINI_COOLDOWN_MS;
+                    for (const id of primary.slice(0, 10)) failedGeminiModels.set(id, until);
                     $('loading-step-text').textContent = 'Asosiy modellar band — zaxira model bilan urinib ko\'rilmoqda...';
                     usedList = fallback;
                     usedLite = true;
-                    res = await runTier(fallback, [], 4);
+                    res = await runTier(fallback, [], 8);
                 }
             } else {
                 usedList = fallback;
                 usedLite = fallback.some(id => /lite/i.test(id));
-                res = await runTier(fallback, [2000], 6);
+                res = await runTier(fallback, [1500], 8);
             }
             if (res.model) {
                 const idx = usedList.indexOf(res.model);
@@ -779,6 +783,7 @@
                 return;
             }
             console.error(err);
+            geminiCheckPromise = null;
             const msgs = [['error', err.message]];
             if (text) msgs.push(['warn', "Gemini javobi \"Qo'lda (chat)\" yorlig'idagi maydonga qo'yildi — u yerda tuzatib, qayta yasashingiz mumkin."]);
             renderMessages($('drawing-messages'), msgs);

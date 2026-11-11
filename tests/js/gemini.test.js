@@ -316,3 +316,54 @@ test('api/gemini demotes failing models behind healthy ones and times out stalle
     assert.equal(rGet.statusCode, 200);
     assert.notEqual(rGet.json().models[0].id, 'gemini-3.5-flash');
 });
+
+test('ranks Flash-Lite above Pro (limit: 0 on free tier) and never sleeps when quotaDelays is empty or errors are limit:0/404', async () => {
+    const ranked = Gm.rankModels(MODELS).map(m => m.id);
+    assert.ok(ranked.indexOf('gemini-3.5-flash-lite') < ranked.indexOf('gemini-2.5-pro'));
+
+    let calls = 0;
+    const status = [];
+    const f = fakeFetch((url, init) => {
+        calls++;
+        const m = JSON.parse(init.body).model;
+        if (m === 'm-dead') return { status: 404, body: { error: { message: 'Model not found' } } };
+        if (m === 'm-pro') return { status: 429, body: { error: { message: 'limit: 0, free tier' } } };
+        return { status: 429, body: { error: { message: 'Quota exceeded for GenerateRequestsPerDay, Please retry in 96s' } } };
+    });
+    const t0 = Date.now();
+    await assert.rejects(Gm.analyzeResilient({
+        endpoint: '/api/gemini',
+        model: 'm-dead',
+        models: ['m-dead', 'm-pro', 'm-day'],
+        file: { mimeType: 'image/png', base64: 'QUJD' },
+        prompt: 'P',
+        retryDelays: [],
+        quotaDelays: [5000],
+        busyDelays: [5000],
+        fetchFn: f,
+        onStatus: s => status.push(s)
+    }), /limit tugadi/);
+    assert.equal(calls, 3);
+    assert.ok(Date.now() - t0 < 500);
+    assert.ok(!status.some(s => /96 s|5 s/.test(s)));
+
+    let calls2 = 0;
+    const fRpm = fakeFetch(() => {
+        calls2++;
+        return { status: 429, body: { error: { message: 'RPM exceeded, retry in 96s' } } };
+    });
+    const t1 = Date.now();
+    await assert.rejects(Gm.analyzeResilient({
+        endpoint: '/api/gemini',
+        model: 'm-rpm',
+        models: ['m-rpm'],
+        file: { mimeType: 'image/png', base64: 'QUJD' },
+        prompt: 'P',
+        retryDelays: [],
+        quotaDelays: [],
+        busyDelays: [5000],
+        fetchFn: fRpm
+    }), /limit tugadi/);
+    assert.equal(calls2, 1);
+    assert.ok(Date.now() - t1 < 500);
+});

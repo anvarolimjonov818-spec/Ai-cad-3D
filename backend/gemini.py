@@ -53,10 +53,10 @@ def rank_models(models: list[dict[str, Any]]) -> list[dict[str, str]]:
         s = _version(n) * 100.0
         if "flash" in n and "lite" not in n:
             s += 150
-        elif "pro" in n:
-            s += 80
         elif "lite" in n:
-            s += 10
+            s += 50
+        elif "pro" in n:
+            s += 5
         if re.search(r"preview|exp", n):
             s -= 15
         if "latest" in n:
