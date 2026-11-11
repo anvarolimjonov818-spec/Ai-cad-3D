@@ -11,7 +11,7 @@
 
     const BASE = 'https://generativelanguage.googleapis.com/v1beta';
     const MAX_FILE = 15 * 1024 * 1024;    // inline data limit is ~20 MB per request
-    const SKIP = /(image|tts|audio|live|embed|vision|robot|computer|learnlm|aqa|imagen|veo|gemma|native|nano)/i;
+    const SKIP = /(image|tts|audio|live|embed|vision|robot|computer|learnlm|aqa|imagen|veo|gemma|native|nano|transcribe|customtools)/i;
 
     function parseRetryAfterMs(res, data, msg) {
         const hdr = res && res.headers && typeof res.headers.get === 'function' ? Number(res.headers.get('retry-after')) : 0;
@@ -130,7 +130,7 @@
         const delays = opts.retryDelays || [2000, 5000];
         const quotaDelays = opts.quotaDelays || [60000, 60000];
         const rawOrder = (opts.model ? [opts.model] : []).concat((models || []).filter(m => m && m !== opts.model));
-        const order = (rawOrder.length ? rawOrder : ['']).slice(0, opts.maxModels || 4);
+        const order = (rawOrder.length ? rawOrder : ['']).slice(0, opts.maxModels || 6);
 
         async function tryModelsOnce() {
             const errors = [];

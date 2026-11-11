@@ -9,7 +9,7 @@ import httpx
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 SKIP_MODEL = re.compile(
-    r"(image|tts|audio|live|embed|vision|robot|computer|learnlm|aqa|imagen|veo|gemma|native|nano)",
+    r"(image|tts|audio|live|embed|vision|robot|computer|learnlm|aqa|imagen|veo|gemma|native|nano|transcribe|customtools)",
     re.I,
 )
 ALLOWED_MIME = re.compile(r"^(image/(png|jpeg|webp|gif)|application/pdf)$", re.I)
