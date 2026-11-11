@@ -52,11 +52,11 @@ def rank_models(models: list[dict[str, Any]]) -> list[dict[str, str]]:
         n = m.get("name", "").lower()
         s = _version(n) * 100.0
         if "flash" in n and "lite" not in n:
-            s += 30
+            s += 150
+        elif "pro" in n:
+            s += 80
         elif "lite" in n:
             s += 10
-        elif "pro" in n:
-            s += 5
         if re.search(r"preview|exp", n):
             s -= 15
         if "latest" in n:
@@ -70,14 +70,15 @@ def rank_models(models: list[dict[str, Any]]) -> list[dict[str, str]]:
     ]
 
 
-def thinking_config_for(model: str, fast: bool) -> Optional[dict[str, Any]]:
+def thinking_config_for(model: str, fast: Any) -> Optional[dict[str, Any]]:
     if not fast:
         return None
+    med = fast == "medium"
     v = _version(model)
     if v >= 3:
-        return {"thinkingLevel": "low"}
+        return {"thinkingLevel": "medium" if med else "low"}
     if v >= 2.5:
-        return {"thinkingBudget": 1024 if re.search(r"pro", model, re.I) else 512}
+        return {"thinkingBudget": 2048 if med else (1024 if re.search(r"pro", model, re.I) else 512)}
     return None
 
 
@@ -147,7 +148,8 @@ async def generate(
         model = models[0]["id"]
 
     url = f"{GEMINI_BASE}/models/{model}:generateContent"
-    tc = thinking_config_for(model, bool(payload.get("fast")))
+    fast_opt = payload.get("fast")
+    tc = thinking_config_for(model, "medium" if fast_opt == "medium" else bool(fast_opt))
     headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
 
     async with httpx.AsyncClient(timeout=22.0, transport=transport) as client:

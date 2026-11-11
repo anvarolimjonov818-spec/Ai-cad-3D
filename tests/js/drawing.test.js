@@ -53,3 +53,16 @@ test('rejects broken answers with a clear message', () => {
     assert.throws(() => D.parseAnswer({ kind: 'revolve', profile: [[0, 0], [-5, 0], [0, 10]] }), /manfiy/);
     assert.throws(() => D.parseAnswer({ kind: 'revolve', profile: [[0, 0], ['a', 0], [0, 10]] }), /son emas/);
 });
+
+test('warns when generated csg height clearly mismatches explicit height dimension', () => {
+    const partial = {
+        part_name: 'Mexanik qism',
+        kind: 'csg',
+        dimensions: [{ label: 'Balandligi', value_mm: 80 }],
+        features: [
+            { op: 'add', shape: 'prism', axis: 'z', from: 0, to: 20, outline: [[-55, -35], [55, -35], [55, 35], [-55, 35]] }
+        ]
+    };
+    const { warnings } = D.parseAnswer(partial);
+    assert.ok(warnings.some(w => /balandlik/i.test(w) && /20 mm/.test(w)));
+});

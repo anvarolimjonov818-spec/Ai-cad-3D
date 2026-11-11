@@ -12,8 +12,8 @@ const ALLOWED_MIME = /^(image\/(png|jpeg|webp|gif)|application\/pdf)$/i;
 const SAFE_MODEL = /^[A-Za-z0-9._-]+$/;
 const MAX_BODY_BYTES = 4.5 * 1024 * 1024;
 const MODEL_CACHE_TTL_MS = 60 * 1000;
-const UPSTREAM_TIMEOUT_MS = 22 * 1000;
-const COOLDOWN_BUSY_MS = 60 * 1000;
+const UPSTREAM_TIMEOUT_MS = 15 * 1000;
+const COOLDOWN_BUSY_MS = 5 * 60 * 1000;
 const COOLDOWN_NOT_FOUND_MS = 15 * 60 * 1000;
 
 function sendJson(res, status, data, extraHeaders) {
@@ -201,7 +201,7 @@ function createHandler(deps) {
         };
 
         try {
-            const tc = Gm.thinkingConfigFor(model, Boolean(body.fast));
+            const tc = Gm.thinkingConfigFor(model, body.fast === 'medium' ? 'medium' : Boolean(body.fast));
             let upRes = await callUpstream(tc);
             let data = await upRes.json().catch(() => ({
                 error: { message: upRes.statusText || ('HTTP ' + upRes.status) }

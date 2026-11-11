@@ -200,7 +200,8 @@
                 // Z-up (CAD) → Y-up (viewer): (x, y, z) → (x, z, -y)
                 out[i * 3] = P[v]; out[i * 3 + 1] = P[v + 2]; out[i * 3 + 2] = -P[v + 1];
             }
-            return { positions: out, volume: solid.volume(), genus: solid.genus(), triangles: T.length / 3, spec: s };
+            const components = typeof solid.decompose === 'function' ? solid.decompose().length : 1;
+            return { positions: out, volume: solid.volume(), genus: solid.genus(), triangles: T.length / 3, components, spec: s };
         } finally {
             for (const o of trash) { try { o.delete(); } catch (e) { /* already freed */ } }
         }

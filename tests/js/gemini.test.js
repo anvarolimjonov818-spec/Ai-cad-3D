@@ -23,9 +23,11 @@ function fakeFetch(handler) {
     return fn;
 }
 
-test('ranks usable models: newest stable Flash first, skips image/tts/embedding', () => {
-    const ids = Gm.rankModels(MODELS).map(m => m.id);
+test('ranks usable models: full Flash before Lite, skips image/tts/embedding', () => {
+    const withPreview = MODELS.concat([{ name: 'models/gemini-3-flash-preview', displayName: '3 Flash Preview', supportedGenerationMethods: ['generateContent'] }]);
+    const ids = Gm.rankModels(withPreview).map(m => m.id);
     assert.equal(ids[0], 'gemini-3.5-flash');
+    assert.ok(ids.indexOf('gemini-3-flash-preview') < ids.indexOf('gemini-3.5-flash-lite'));
     assert.ok(!ids.some(id => /image|tts|embedding/.test(id)));
     assert.ok(ids.includes('gemini-2.5-pro'));
 });
@@ -85,10 +87,12 @@ test('analyzeResilient does not retry a bad key', async () => {
     assert.equal(calls, 1);
 });
 
-test('thinkingConfigFor selects version-appropriate fast settings', () => {
+test('thinkingConfigFor selects version-appropriate fast and medium settings', () => {
     assert.equal(Gm.thinkingConfigFor('gemini-3.5-flash', false), null);
     assert.deepEqual(Gm.thinkingConfigFor('gemini-3.5-flash', true), { thinkingLevel: 'low' });
+    assert.deepEqual(Gm.thinkingConfigFor('gemini-3.6-flash', 'medium'), { thinkingLevel: 'medium' });
     assert.deepEqual(Gm.thinkingConfigFor('gemini-2.5-flash', true), { thinkingBudget: 512 });
+    assert.deepEqual(Gm.thinkingConfigFor('gemini-2.5-flash', 'medium'), { thinkingBudget: 2048 });
     assert.deepEqual(Gm.thinkingConfigFor('gemini-2.5-pro', true), { thinkingBudget: 1024 });
     assert.equal(Gm.thinkingConfigFor('gemini-2.0-flash', true), null);
 });

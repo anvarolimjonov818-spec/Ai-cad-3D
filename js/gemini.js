@@ -211,9 +211,9 @@
         const score = m => {
             const n = m.name.toLowerCase();
             let s = version(n) * 100;
-            if (n.includes('flash') && !n.includes('lite')) s += 30;       // free tier sweet spot
-            else if (n.includes('lite')) s += 10;
-            else if (n.includes('pro')) s += 5;                             // usually paid only
+            if (n.includes('flash') && !n.includes('lite')) s += 150;      // accurate full Flash models first
+            else if (n.includes('pro')) s += 80;
+            else if (n.includes('lite')) s += 10;                           // emergency lightweight fallback
             if (/preview|exp/.test(n)) s -= 15;
             if (/latest/.test(n)) s += 1;
             return s;
@@ -242,9 +242,10 @@
      */
     function thinkingConfigFor(model, fast) {
         if (!fast) return null;
+        const med = fast === 'medium';
         const v = version(model);
-        if (v >= 3) return { thinkingLevel: 'low' };
-        if (v >= 2.5) return { thinkingBudget: /pro/i.test(model) ? 1024 : 512 };
+        if (v >= 3) return { thinkingLevel: med ? 'medium' : 'low' };
+        if (v >= 2.5) return { thinkingBudget: med ? 2048 : (/pro/i.test(model) ? 1024 : 512) };
         return null;
     }
 
@@ -295,7 +296,7 @@
                 model: model || '',
                 file: { mimeType: file.mimeType, base64: file.base64 },
                 prompt,
-                fast: !!fast
+                fast: fast === 'medium' ? 'medium' : !!fast
             };
             const data = await request(fetchFn, endpoint, '', payload, signal);
             return extractAnswerText(data);

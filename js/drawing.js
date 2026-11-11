@@ -33,12 +33,13 @@ Points [u, v] lie in the plane perpendicular to the axis: axis "z" -> [x, y], ax
 - "revolve": vertical body of rotation: "profile" = closed half-section [[radius, z], ...] (radius >= 0), around a vertical axis at "center" [x, y]. Use for shafts, grooves, tapers, stepped bores.
 
 HOW TO WORK:
-1. Read every view, section and hatching. Hatched areas are material cut by the section plane; hidden or sectioned interior shows holes and bores.
-2. Use only dimensions written on the drawing; respect dimension chains, symmetry, Ø, R, □, S, "4x Ø10" / "4 отв.", chamfers "2x45°", and the scale.
-3. Make through cuts 1 mm longer than the material on both ends so faces do not coincide.
-4. Check that every view of your model matches the drawing (overall sizes, positions of holes, slots and steps) before answering.
-5. If something is not dimensioned, estimate it from the picture, say so in "assumptions" and set "confidence" to "low". Threads are modelled as plain holes/shafts of the nominal diameter; list such simplifications in "assumptions".
-6. Write "part_name", "label" and "assumptions" in Uzbek (Latin script).
+1. Read EVERY view together: Front view gives (X, Z) width and height; Top view gives (X, Y) width and depth; Left/Side view gives (Y, Z) depth and height. If an isometric/3D view is present, make sure every wall, boss, rib, lug, slot, chamfer and hole in it is included.
+2. Build the ENTIRE 3D volume from Z = 0 up to the full height H, not just the bottom base plate. Overlap adjacent "add" features by ~0.1 mm where they touch so they union cleanly into ONE solid body.
+3. Use only dimensions written on the drawing; respect dimension chains, symmetry, Ø, R, □, S, "4x Ø10" / "4 отв.", chamfers "2x45°", and the scale.
+4. Through cuts go 1 mm beyond both outer faces; blind pockets, slots and recesses MUST stop at their own depth ("from".."to") and MUST NOT split the base into separate disconnected pieces unless the drawing literally shows two parts.
+5. Before writing JSON, double-check that the overall X (Length), Y (Width) and Z (Height) bounding box of your "add" features matches the drawing's main dimensions and every feature matches all views.
+6. If something is not dimensioned, estimate it carefully from proportions in the drawing, say so in "assumptions" and set "confidence" to "low". Threads are modelled as plain holes/shafts of the nominal diameter; list such simplifications in "assumptions".
+7. Write "part_name", "label" and "assumptions" in Uzbek (Latin script).
 
 ANSWER: first a few short lines describing the part, then ONE JSON code block exactly in this shape (omit fields a shape does not use):
 
@@ -188,7 +189,34 @@ ANSWER: first a few short lines describing the part, then ONE JSON code block ex
             assumptions: Array.isArray(r.assumptions) ? r.assumptions.map(String).slice(0, 100) : [],
             confidence: ['high', 'medium', 'low'].includes(r.confidence) ? r.confidence : 'medium'
         };
+        if (spec.kind === 'csg') {
+            const zSpan = estimateCsgZSpan(spec.features);
+            const hDim = analysis.dimensions.find(d => /(baland|umumiy balandlik|height|^h$)/i.test(String(d.label || '')) && Number(d.value_mm) > 0);
+            if (hDim && zSpan > 0 && zSpan < Number(hDim.value_mm) * 0.65) {
+                warnings.push(`Diqqat: chizmada ko'rsatilgan balandlik (~${hDim.value_mm} mm) bilan yasalgan model balandligi (${Math.round(zSpan)} mm) mos kelmadi — yuqori qismlar tushib qolgan bo'lishi mumkin.`);
+            }
+        }
         return { spec, analysis, warnings };
+    }
+
+    function estimateCsgZSpan(features) {
+        let minZ = Infinity, maxZ = -Infinity;
+        for (const f of features || []) {
+            if (f.op !== 'add') continue;
+            if (f.shape === 'revolve') {
+                for (const [, z] of f.profile || []) { minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z); }
+            } else if (f.axis === 'z') {
+                minZ = Math.min(minZ, f.from); maxZ = Math.max(maxZ, f.to);
+            } else if (f.axis === 'x' || f.axis === 'y') {
+                const pts = f.outline || (f.circles || []).flatMap(c => [[c.center[0], c.center[1] - c.diameter / 2], [c.center[0], c.center[1] + c.diameter / 2]]);
+                for (const [, v] of pts || []) { minZ = Math.min(minZ, v); maxZ = Math.max(maxZ, v); }
+                if (f.shape === 'cylinder' || f.shape === 'regular_prism') {
+                    const rad = (f.diameter || 0) / 2;
+                    minZ = Math.min(minZ, f.center[1] - rad); maxZ = Math.max(maxZ, f.center[1] + rad);
+                }
+            }
+        }
+        return Number.isFinite(minZ) && maxZ > minZ ? maxZ - minZ : 0;
     }
 
     return { PROMPT, buildPrompt, extractJSON, parseAnswer, selfIntersects };

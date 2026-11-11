@@ -239,8 +239,9 @@
         if (state.preset === 'contour' && state.contour && state.contour.mode === 'revolve') $('dim-width').value = $('dim-length').value;
         if (state.preset === 'drawing') {
             showSpec(state.drawing.spec, state.drawing.spec.name || 'chizma', opts)
-                .then(() => {
-                    if (state.report && !state.report.watertight) toast("Model yopiq chiqmadi — Claude'dan geometriyani qayta tekshirishni so'rang", true);
+                .then(built => {
+                    if (built && built.components > 1) toast(`Diqqat: detal ${built.components} ta bo'lakka ajralib qolgan — chizma bilan solishtiring`, true);
+                    else if (state.report && !state.report.watertight) toast("Model yopiq chiqmadi — geometriyani qayta tekshiring", true);
                     else toast('3D model chizma asosida yaratildi');
                 })
                 .catch(err => renderMessages($('drawing-messages'), [['error', err.message]]));
@@ -283,10 +284,12 @@
         try {
             state.spec = spec;
             let geo;
+            let components = 1;
             if (spec.kind === 'csg') {
                 busy(true, '3D model yig\'ilmoqda...');
                 const built = window.CadCSG.build(await loadManifold(), spec);
                 if (token !== showToken) return;      // a newer model was requested meanwhile
+                components = built.components || 1;
                 geo = new THREE.BufferGeometry();
                 geo.setAttribute('position', new THREE.BufferAttribute(built.positions, 3));
                 geo.computeVertexNormals();
@@ -298,6 +301,7 @@
             setGeometry(geo);
             analyze();
             if (opts && opts.fit) fitCamera();
+            return { components };
         } catch (err) {
             console.error(err);
             setStatus('error', err.message);
@@ -606,25 +610,36 @@
     // ------------------------------------------- Gemini (server-side proxy)
 
     const geminiCache = new Map();
-    const failedGeminiModels = new Set();
+    const failedGeminiModels = new Map();
+    const GEMINI_COOLDOWN_MS = 60 * 1000;
     let geminiBusy = false;
-    let lastGeminiModel = (() => { try { return sessionStorage.getItem('aicad.gemini.lastModel') || ''; } catch (e) { return ''; } })();
+    let lastGeminiModel = (() => {
+        try {
+            const m = sessionStorage.getItem('aicad.gemini.lastModel') || '';
+            if (/lite/i.test(m)) { sessionStorage.removeItem('aicad.gemini.lastModel'); return ''; }
+            return m;
+        } catch (e) { return ''; }
+    })();
     let geminiServer = { checked: false, configured: false, models: [], error: '' };
     let geminiCheckPromise = null;
 
     function orderGeminiModels(models) {
-        const healthy = [], cooled = [];
+        const now = Date.now();
+        const primary = [], lite = [], cooledPrimary = [], cooledLite = [];
         for (const m of models || []) {
             const id = typeof m === 'string' ? m : (m && m.id);
             if (!id) continue;
-            if (failedGeminiModels.has(id)) cooled.push(id);
-            else healthy.push(id);
+            const until = failedGeminiModels.get(id) || 0;
+            const isCooled = until > now;
+            if (!isCooled && until) failedGeminiModels.delete(id);
+            if (/lite/i.test(id)) (isCooled ? cooledLite : lite).push(id);
+            else (isCooled ? cooledPrimary : primary).push(id);
         }
-        const out = [];
-        if (lastGeminiModel && healthy.includes(lastGeminiModel)) out.push(lastGeminiModel);
-        for (const id of healthy) if (!out.includes(id)) out.push(id);
-        for (const id of cooled) if (!out.includes(id)) out.push(id);
-        return out;
+        const orderedPrimary = [];
+        if (lastGeminiModel && primary.includes(lastGeminiModel)) orderedPrimary.push(lastGeminiModel);
+        for (const id of primary) if (!orderedPrimary.includes(id)) orderedPrimary.push(id);
+        for (const id of cooledPrimary) if (!orderedPrimary.includes(id)) orderedPrimary.push(id);
+        return { primary: orderedPrimary, fallback: lite.concat(cooledLite) };
     }
 
     function geminiEndpoint() {
@@ -659,7 +674,7 @@
                 } else {
                     $('gemini-status').textContent = "Chizmani (PNG, JPEG, WEBP yoki PDF) yuklang — AI avtomatik 3D model yaratadi.";
                 }
-            } catch (err) {
+        } catch (err) {
                 geminiServer = { checked: false, configured: false, models: [], error: err.message || '' };
                 $('gemini-status').textContent = "Chizmani (PNG, JPEG, WEBP yoki PDF) yuklang — AI avtomatik 3D model yaratadi.";
             } finally {
@@ -697,38 +712,63 @@
             if (srv.checked && !srv.configured) {
                 throw new Error("Serverda GEMINI_API_KEY o'rnatilmagan. Sayt egasi Vercel Settings -> Environment Variables ga GEMINI_API_KEY qo'shishi kerak.");
             }
-            const file = await window.CadGemini.readFile(f, { maxSide: 1600, minBytes: 400 * 1024 });
+            const file = await window.CadGemini.readFile(f, { maxSide: 2048, minBytes: 1200 * 1024 });
             if (ctrl.signal.aborted) throw Object.assign(new Error('Tahlil bekor qilindi'), { name: 'AbortError' });
             if (file.resized) {
                 $('loading-step-text').textContent = `Gemini tahlil qilyapti... (${Math.round(file.origBytes / 1024)} KB → ${Math.round(file.sentBytes / 1024)} KB)`;
             }
-            const models = orderGeminiModels(srv.models);
-            const res = await window.CadGemini.analyzeResilient({
+            const { primary, fallback } = orderGeminiModels(srv.models);
+            const prompt = D.buildPrompt(note);
+            const runTier = (list, busyDelays, maxModels) => window.CadGemini.analyzeResilient({
                 endpoint: geminiEndpoint(),
-                model: models[0] || '',
-                models,
+                model: list[0] || '',
+                models: list,
                 file,
-                fast: true,
+                fast: 'medium',
                 retryDelays: [],
-                busyDelays: [3000, 5000],
-                maxModels: 8,
+                busyDelays,
+                maxModels,
                 signal: ctrl.signal,
-                prompt: D.buildPrompt(note),
+                prompt,
                 onStatus: msg => { $('loading-step-text').textContent = msg; }
             });
+            let res, usedList = primary, usedLite = false;
+            if (primary.length) {
+                try {
+                    res = await runTier(primary, [2000], 6);
+                } catch (err) {
+                    const abortOrPermanent = (err && (err.name === 'AbortError' || err.noRetry || err.status === 413 || /kalit noto'g'ri/i.test(err.message)));
+                    if (abortOrPermanent || !fallback.length) throw err;
+                    $('loading-step-text').textContent = 'Asosiy modellar band — zaxira model bilan urinib ko\'rilmoqda...';
+                    usedList = fallback;
+                    usedLite = true;
+                    res = await runTier(fallback, [], 4);
+                }
+            } else {
+                usedList = fallback;
+                usedLite = fallback.some(id => /lite/i.test(id));
+                res = await runTier(fallback, [2000], 6);
+            }
             if (res.model) {
-                const idx = models.indexOf(res.model);
-                for (let i = 0; i < idx; i++) failedGeminiModels.add(models[i]);
+                const idx = usedList.indexOf(res.model);
+                const cooldownUntil = Date.now() + GEMINI_COOLDOWN_MS;
+                for (let i = 0; i < idx; i++) failedGeminiModels.set(usedList[i], cooldownUntil);
+                if (usedList !== primary) for (const id of primary) failedGeminiModels.set(id, cooldownUntil);
                 failedGeminiModels.delete(res.model);
-                lastGeminiModel = res.model;
-                try { sessionStorage.setItem('aicad.gemini.lastModel', res.model); } catch (e) { /* ignored */ }
+                if (!/lite/i.test(res.model)) {
+                    lastGeminiModel = res.model;
+                    try { sessionStorage.setItem('aicad.gemini.lastModel', res.model); } catch (e) { /* ignored */ }
+                }
             }
             text = res.text;
             const sec = ((performance.now() - t0) / 1000).toFixed(1);
             $('drawing-answer').value = text;           // visible in the manual tab for checking / editing
             const { spec, analysis, warnings } = D.parseAnswer(text);
+            if (usedLite || /lite/i.test(res.model || '')) {
+                warnings.unshift(`Asosiy modellar hozir band bo'lgani uchun zaxira model (${res.model}) ishlatildi — murakkab chizmada ayrim qismlar soddalashgan bo'lishi mumkin.`);
+            }
             if (res.model) analysis.model = res.model;
-            cacheGemini(cacheKey, { text, model: res.model });
+            if (!usedLite && !/lite/i.test(res.model || '')) cacheGemini(cacheKey, { text, model: res.model });
             busy(false);
             useDrawing({ spec, analysis }, warnings);
             toast(`Tayyor (${sec} s)`);
