@@ -626,6 +626,26 @@
         geminiCache.set(key, value);
     }
 
+    function setGeminiKeyCollapsed(collapsed, key) {
+        const k = (key || '').trim();
+        const hide = Boolean(collapsed && k);
+        $('gemini-key-box').classList.toggle('hidden', hide);
+        $('gemini-key-saved').classList.toggle('hidden', !hide);
+        if (hide) $('gemini-key-mask').textContent = k.length > 8 ? `${k.slice(0, 4)}…${k.slice(-4)}` : '••••';
+    }
+
+    function clearGeminiKey() {
+        store.set(GEMINI_KEY, '');
+        store.set(GEMINI_MODEL, '');
+        $('gemini-key').value = '';
+        $('gemini-model').innerHTML = '<option value="">— avval kalitni tekshiring —</option>';
+        $('gemini-status').textContent = "Kalit faqat sizning brauzeringizda saqlanadi va faqat Google'ga yuboriladi. Bepul tarifda Google ma'lumotlardan mahsulotlarini yaxshilash uchun foydalanishi mumkin — maxfiy chizmalarni yubormang.";
+        renderMessages($('drawing-messages'), []);
+        setGeminiKeyCollapsed(false);
+        updateGeminiButton();
+        toast('Saqlangan Gemini kalit o\'chirildi');
+    }
+
     async function checkGeminiKey(silent) {
         const key = $('gemini-key').value.trim();
         if (!key) { if (!silent) toast('Avval Gemini API kalitini kiriting', true); return; }
@@ -639,10 +659,13 @@
             sel.innerHTML = models.map(m => `<option value="${m.id}">${m.label.replace(/</g, '&lt;')} (${m.id})</option>`).join('');
             if (saved && models.some(m => m.id === saved)) sel.value = saved;
             store.set(GEMINI_KEY, $('gemini-remember').checked ? key : '');
+            store.set(GEMINI_MODEL, sel.value);
+            setGeminiKeyCollapsed(true, key);
             renderMessages($('drawing-messages'), []);
-            if (!silent) toast(`Kalit ishlayapti — ${models.length} ta model topildi`);
+            if (!silent) toast(`Kalit saqlandi — ${models.length} ta model topildi`);
             $('gemini-status').textContent = 'Tanlangan model: ' + sel.value + '. Bepul tarifda kunlik limit bor; tugasa boshqa Flash modelni tanlang.';
         } catch (err) {
+            if (/kalit noto'g'ri|ruxsat yo'q|topilmadi/i.test(err.message)) setGeminiKeyCollapsed(false);
             renderMessages($('drawing-messages'), [['error', err.message]]);
         } finally {
             btn.disabled = false;
@@ -923,7 +946,10 @@
         $('btn-build-answer').addEventListener('click', buildFromAnswer);
         $$('.tab').forEach(t => t.addEventListener('click', () => setDrawingMode(t.dataset.mode)));
         $('btn-gemini-check').addEventListener('click', () => checkGeminiKey(false));
+        $('btn-gemini-edit').addEventListener('click', () => { setGeminiKeyCollapsed(false); $('gemini-key').focus(); $('gemini-key').select(); });
+        $('btn-gemini-clear').addEventListener('click', clearGeminiKey);
         $('gemini-key').addEventListener('change', () => checkGeminiKey(true));
+        $('gemini-key').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); checkGeminiKey(false); } });
         $('gemini-key').addEventListener('input', updateGeminiButton);
         $('gemini-model').addEventListener('change', () => { store.set(GEMINI_MODEL, $('gemini-model').value); updateGeminiButton(); });
         $('gemini-remember').addEventListener('change', () => store.set(GEMINI_KEY, $('gemini-remember').checked ? $('gemini-key').value.trim() : ''));
@@ -932,7 +958,7 @@
         $('btn-gemini').addEventListener('click', runGemini);
         $('btn-cancel-busy').addEventListener('click', () => { if (busyCancel) busyCancel(); });
         const savedKey = store.get(GEMINI_KEY);
-        if (savedKey) { $('gemini-key').value = savedKey; checkGeminiKey(true); }
+        if (savedKey) { $('gemini-key').value = savedKey; setGeminiKeyCollapsed(true, savedKey); checkGeminiKey(true); }
         $('btn-server-check').addEventListener('click', serverCheck);
 
         $('btn-example-load').addEventListener('click', () => {

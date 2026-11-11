@@ -182,6 +182,11 @@ select.select { width: 100%; background: rgba(0,0,0,0.3); color: #fff; border: 1
 .field-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-secondary); margin: 10px 0 4px; }
 .field-label a { color: var(--accent-cyan); text-decoration: none; }
 .key-row { display: flex; gap: 6px; }
+.key-saved { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.35); font-size: 11px; color: #6ee7b7; flex-wrap: wrap; }
+.key-saved-text { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.key-saved-text .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-emerald); box-shadow: 0 0 6px var(--accent-emerald); }
+.key-saved-text code { color: var(--text-secondary); font-size: 11px; }
+.key-saved-actions { display: flex; gap: 6px; }
 .text-input { flex: 1; min-width: 0; background: rgba(0,0,0,0.3); color: #fff; border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 8px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 #drawing-gemini .checkbox-container { margin-top: 6px; }
 #drawing-upload .upload-zone { margin-top: 10px; }

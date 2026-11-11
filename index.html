@@ -54,13 +54,22 @@
                     <textarea class="note-input" id="drawing-note" rows="2" placeholder="Izoh (ixtiyoriy): masalan, &quot;4 ta teshik Ø10, qalinligi 8 mm&quot;"></textarea>
 
                     <div id="drawing-gemini">
-                        <label class="field-label" for="gemini-key">Gemini API kalit
-                            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">bepul kalit olish ↗</a></label>
-                        <div class="key-row">
-                            <input type="password" class="text-input" id="gemini-key" placeholder="AIza..." autocomplete="off" spellcheck="false">
-                            <button class="btn btn-secondary btn-sm" id="btn-gemini-check">Tekshirish</button>
+                        <div id="gemini-key-saved" class="key-saved hidden">
+                            <span class="key-saved-text"><span class="dot"></span> Gemini kalit ulangan (<code id="gemini-key-mask"></code>)</span>
+                            <div class="key-saved-actions">
+                                <button class="btn btn-secondary btn-sm" id="btn-gemini-edit" type="button">O'zgartirish</button>
+                                <button class="btn btn-secondary btn-sm" id="btn-gemini-clear" type="button" title="Saqlangan kalitni o'chirish">O'chirish</button>
+                            </div>
                         </div>
-                        <label class="checkbox-container"><input type="checkbox" id="gemini-remember" checked> <span>Kalitni shu brauzerda eslab qolish</span></label>
+                        <div id="gemini-key-box">
+                            <label class="field-label" for="gemini-key">Gemini API kalit
+                                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">bepul kalit olish ↗</a></label>
+                            <div class="key-row">
+                                <input type="password" class="text-input" id="gemini-key" placeholder="AIza..." autocomplete="off" spellcheck="false">
+                                <button class="btn btn-secondary btn-sm" id="btn-gemini-check" type="button">Tekshirish</button>
+                            </div>
+                            <label class="checkbox-container"><input type="checkbox" id="gemini-remember" checked> <span>Kalitni shu brauzerda eslab qolish</span></label>
+                        </div>
                         <label class="field-label" for="gemini-model">Model</label>
                         <select class="select" id="gemini-model"><option value="">— avval kalitni tekshiring —</option></select>
                         <label class="checkbox-container"><input type="checkbox" id="gemini-fast" checked> <span>Tezkor rejim (rasmni siqish, yengil tahlil — tezroq va kamroq limit)</span></label>
