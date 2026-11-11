@@ -241,3 +241,74 @@ test('api/gemini serverless handler checks env, proxies with server key, and san
     await configured({ method: 'POST', body: { model: '../evil', file: { mimeType: 'image/png', base64: 'QUJD' }, prompt: 'Draw' } }, rBad);
     assert.equal(rBad.statusCode, 400);
 });
+
+test('rankModels drops non-CAD codenames and analyzeResilient fails over immediately with empty retryDelays', async () => {
+    const extra = MODELS.concat([
+        { name: 'models/gemini-4-argon', displayName: 'Argon', supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/gemini-4-carbon', displayName: 'Carbon', supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/gemini-3.5-transcribe', displayName: 'Transcribe', supportedGenerationMethods: ['generateContent'] }
+    ]);
+    const ids = Gm.rankModels(extra).map(m => m.id);
+    assert.equal(ids[0], 'gemini-3.5-flash');
+    assert.ok(!ids.some(id => /argon|carbon|transcribe/.test(id)));
+
+    const seen = [];
+    const f = fakeFetch((url, init) => {
+        const b = JSON.parse(init.body);
+        seen.push(b.model);
+        if (b.model !== 'gemini-ok') return { status: 503, body: { error: { message: 'High demand' } } };
+        return { body: { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"kind":"csg"}' }] } }] } };
+    });
+    const r = await Gm.analyzeResilient({
+        endpoint: '/api/gemini',
+        model: 'gemini-busy1',
+        models: ['gemini-busy1', 'gemini-busy2', 'gemini-ok'],
+        file: { mimeType: 'image/png', base64: 'QUJD' },
+        prompt: 'P',
+        retryDelays: [],
+        busyDelays: [10],
+        fetchFn: f
+    });
+    assert.deepEqual(seen, ['gemini-busy1', 'gemini-busy2', 'gemini-ok']);
+    assert.equal(r.model, 'gemini-ok');
+});
+
+test('api/gemini demotes failing models behind healthy ones and times out stalled upstreams with 504', async () => {
+    const { createHandler } = require('../../api/gemini.js');
+    const makeRes = () => {
+        const headers = {};
+        let raw = '';
+        return {
+            statusCode: 200,
+            headers,
+            setHeader(k, v) { headers[k.toLowerCase()] = v; },
+            end(s) { raw = s || ''; },
+            json() { return JSON.parse(raw || '{}'); }
+        };
+    };
+
+    const h = createHandler({
+        env: { GEMINI_API_KEY: 'k' },
+        timeoutMs: 25,
+        fetchFn: (url, init) => {
+            if (url.includes('/models?')) return Promise.resolve({ ok: true, status: 200, headers: new Headers(), json: async () => ({ models: MODELS }) });
+            return new Promise((resolve, reject) => {
+                init.signal.addEventListener('abort', () => {
+                    const e = new Error('aborted');
+                    e.name = 'AbortError';
+                    reject(e);
+                });
+            });
+        }
+    });
+
+    const rTimeout = makeRes();
+    await h({ method: 'POST', body: { model: '', file: { mimeType: 'image/png', base64: 'QUJD' }, prompt: 'P' } }, rTimeout);
+    assert.equal(rTimeout.statusCode, 504);
+    assert.equal(rTimeout.headers['x-gemini-model'], 'gemini-3.5-flash');
+
+    const rGet = makeRes();
+    await h({ method: 'GET' }, rGet);
+    assert.equal(rGet.statusCode, 200);
+    assert.notEqual(rGet.json().models[0].id, 'gemini-3.5-flash');
+});

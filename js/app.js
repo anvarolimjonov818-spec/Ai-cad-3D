@@ -606,9 +606,26 @@
     // ------------------------------------------- Gemini (server-side proxy)
 
     const geminiCache = new Map();
+    const failedGeminiModels = new Set();
     let geminiBusy = false;
+    let lastGeminiModel = (() => { try { return sessionStorage.getItem('aicad.gemini.lastModel') || ''; } catch (e) { return ''; } })();
     let geminiServer = { checked: false, configured: false, models: [], error: '' };
     let geminiCheckPromise = null;
+
+    function orderGeminiModels(models) {
+        const healthy = [], cooled = [];
+        for (const m of models || []) {
+            const id = typeof m === 'string' ? m : (m && m.id);
+            if (!id) continue;
+            if (failedGeminiModels.has(id)) cooled.push(id);
+            else healthy.push(id);
+        }
+        const out = [];
+        if (lastGeminiModel && healthy.includes(lastGeminiModel)) out.push(lastGeminiModel);
+        for (const id of healthy) if (!out.includes(id)) out.push(id);
+        for (const id of cooled) if (!out.includes(id)) out.push(id);
+        return out;
+    }
 
     function geminiEndpoint() {
         const base = state.api && state.api.base ? state.api.base : '';
@@ -673,7 +690,7 @@
         updateGeminiButton();
         const ctrl = new AbortController();
         const t0 = performance.now();
-        busy(true, "Gemini chizmani o'qiyapti... (10–60 soniya)", () => ctrl.abort());
+        busy(true, "Gemini chizmani o'qiyapti... (5–20 soniya)", () => ctrl.abort());
         let text = '';
         try {
             const srv = await initGemini();
@@ -685,17 +702,27 @@
             if (file.resized) {
                 $('loading-step-text').textContent = `Gemini tahlil qilyapti... (${Math.round(file.origBytes / 1024)} KB → ${Math.round(file.sentBytes / 1024)} KB)`;
             }
-            const models = (srv.models || []).map(m => m.id).filter(Boolean);
+            const models = orderGeminiModels(srv.models);
             const res = await window.CadGemini.analyzeResilient({
                 endpoint: geminiEndpoint(),
                 model: models[0] || '',
                 models,
                 file,
-                fast: false,
+                fast: true,
+                retryDelays: [],
+                busyDelays: [3000, 5000],
+                maxModels: 8,
                 signal: ctrl.signal,
                 prompt: D.buildPrompt(note),
                 onStatus: msg => { $('loading-step-text').textContent = msg; }
             });
+            if (res.model) {
+                const idx = models.indexOf(res.model);
+                for (let i = 0; i < idx; i++) failedGeminiModels.add(models[i]);
+                failedGeminiModels.delete(res.model);
+                lastGeminiModel = res.model;
+                try { sessionStorage.setItem('aicad.gemini.lastModel', res.model); } catch (e) { /* ignored */ }
+            }
             text = res.text;
             const sec = ((performance.now() - t0) / 1000).toFixed(1);
             $('drawing-answer').value = text;           // visible in the manual tab for checking / editing

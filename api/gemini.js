@@ -12,6 +12,9 @@ const ALLOWED_MIME = /^(image\/(png|jpeg|webp|gif)|application\/pdf)$/i;
 const SAFE_MODEL = /^[A-Za-z0-9._-]+$/;
 const MAX_BODY_BYTES = 4.5 * 1024 * 1024;
 const MODEL_CACHE_TTL_MS = 60 * 1000;
+const UPSTREAM_TIMEOUT_MS = 22 * 1000;
+const COOLDOWN_BUSY_MS = 60 * 1000;
+const COOLDOWN_NOT_FOUND_MS = 15 * 60 * 1000;
 
 function sendJson(res, status, data, extraHeaders) {
     res.statusCode = status;
@@ -66,11 +69,31 @@ function createHandler(deps) {
     let cachedModels = null;
     let cachedAt = 0;
     let cachedKey = '';
+    const cooldowns = new Map();
+
+    function markCooldown(model, status) {
+        if (!model) return;
+        if (status < 400) { cooldowns.delete(model); return; }
+        if (status === 404) cooldowns.set(model, Date.now() + COOLDOWN_NOT_FOUND_MS);
+        else if (status === 429 || status >= 500) cooldowns.set(model, Date.now() + COOLDOWN_BUSY_MS);
+    }
+
+    function sortByHealth(list) {
+        const now = Date.now();
+        const ready = [];
+        const cooled = [];
+        for (const m of list) {
+            const until = cooldowns.get(m.id) || 0;
+            if (until > now) cooled.push(m);
+            else ready.push(m);
+        }
+        return ready.concat(cooled);
+    }
 
     async function getModels(apiKey, fetchFn, useCache) {
         const now = Date.now();
         if (useCache && cachedModels && cachedKey === apiKey && now - cachedAt < MODEL_CACHE_TTL_MS) {
-            return cachedModels;
+            return sortByHealth(cachedModels);
         }
         const models = await Gm.listModels(apiKey, fetchFn);
         if (useCache) {
@@ -78,7 +101,7 @@ function createHandler(deps) {
             cachedKey = apiKey;
             cachedAt = now;
         }
-        return models;
+        return sortByHealth(models);
     }
 
     return async function geminiHandler(req, res) {
@@ -147,6 +170,7 @@ function createHandler(deps) {
             return sendJson(res, 502, { error: { message: sanitizeError(err.message, apiKey) } });
         }
 
+        const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : UPSTREAM_TIMEOUT_MS;
         const url = `${BASE}/models/${encodeURIComponent(model)}:generateContent`;
         const callUpstream = async thinking => {
             const payload = Gm.buildGenerateBody({
@@ -154,14 +178,26 @@ function createHandler(deps) {
                 prompt,
                 thinking
             });
-            return fetchFn(url, {
-                method: 'POST',
-                headers: {
-                    'x-goog-api-key': apiKey,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
+            const ctrl = new AbortController();
+            const timer = timeoutMs > 0 ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
+            try {
+                return await fetchFn(url, {
+                    method: 'POST',
+                    headers: {
+                        'x-goog-api-key': apiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload),
+                    signal: ctrl.signal
+                });
+            } catch (e) {
+                if (e && e.name === 'AbortError') {
+                    throw Object.assign(new Error("Model javobi kechikdi — boshqa modelga o'tilmoqda"), { isTimeout: true });
+                }
+                throw e;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
         };
 
         try {
@@ -178,6 +214,7 @@ function createHandler(deps) {
                 }));
             }
 
+            markCooldown(model, upRes.status || 200);
             if (data && data.error && data.error.message) {
                 data.error.message = sanitizeError(data.error.message, apiKey);
             }
@@ -187,6 +224,10 @@ function createHandler(deps) {
                 'X-Gemini-Model': model
             });
         } catch (err) {
+            if (err && err.isTimeout) {
+                markCooldown(model, 504);
+                return sendJson(res, 504, { error: { message: err.message } }, { 'X-Gemini-Model': model });
+            }
             return sendJson(res, 502, { error: { message: sanitizeError(err.message, apiKey) } });
         }
     };

@@ -9,7 +9,7 @@ import httpx
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 SKIP_MODEL = re.compile(
-    r"(image|tts|audio|live|embed|vision|robot|computer|learnlm|aqa|imagen|veo|gemma|native|nano|transcribe|customtools)",
+    r"(image|tts|audio|live|embed|vision|robot|computer|learnlm|aqa|imagen|veo|gemma|native|nano|transcribe|customtools|argon|carbon|omni)",
     re.I,
 )
 ALLOWED_MIME = re.compile(r"^(image/(png|jpeg|webp|gif)|application/pdf)$", re.I)
@@ -43,6 +43,7 @@ def rank_models(models: list[dict[str, Any]]) -> list[dict[str, str]]:
     usable = [
         m for m in (models or [])
         if re.search(r"gemini", m.get("name", ""), re.I)
+        and re.search(r"(flash|lite|pro)", m.get("name", ""), re.I)
         and not SKIP_MODEL.search(m.get("name", ""))
         and "generateContent" in (m.get("supportedGenerationMethods") or [])
     ]
@@ -149,14 +150,20 @@ async def generate(
     tc = thinking_config_for(model, bool(payload.get("fast")))
     headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
 
-    async with httpx.AsyncClient(timeout=90.0, transport=transport) as client:
-        up = await client.post(url, headers=headers, json=_build_body(file["mimeType"], file["base64"], prompt, tc))
-        data = up.json() if up.content else {"error": {"message": up.reason_phrase or f"HTTP {up.status_code}"}}
-        if not up.is_success and up.status_code == 400 and tc:
-            err_msg = str((data.get("error") or {}).get("message") or "")
-            if re.search(r"thinking", err_msg, re.I):
-                up = await client.post(url, headers=headers, json=_build_body(file["mimeType"], file["base64"], prompt, None))
-                data = up.json() if up.content else {"error": {"message": up.reason_phrase or f"HTTP {up.status_code}"}}
+    async with httpx.AsyncClient(timeout=22.0, transport=transport) as client:
+        try:
+            up = await client.post(url, headers=headers, json=_build_body(file["mimeType"], file["base64"], prompt, tc))
+            data = up.json() if up.content else {"error": {"message": up.reason_phrase or f"HTTP {up.status_code}"}}
+            if not up.is_success and up.status_code == 400 and tc:
+                err_msg = str((data.get("error") or {}).get("message") or "")
+                if re.search(r"thinking", err_msg, re.I):
+                    up = await client.post(url, headers=headers, json=_build_body(file["mimeType"], file["base64"], prompt, None))
+                    data = up.json() if up.content else {"error": {"message": up.reason_phrase or f"HTTP {up.status_code}"}}
+        except httpx.TimeoutException:
+            return 504, {"error": {"message": "Model javobi kechikdi — boshqa modelga o'tilmoqda"}}, {
+                "Cache-Control": "no-store",
+                "X-Gemini-Model": model,
+            }
 
     if isinstance(data, dict) and isinstance(data.get("error"), dict) and "message" in data["error"]:
         data["error"]["message"] = sanitize_error(data["error"]["message"], api_key)

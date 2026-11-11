@@ -11,7 +11,7 @@
 
     const BASE = 'https://generativelanguage.googleapis.com/v1beta';
     const MAX_FILE = 15 * 1024 * 1024;    // inline data limit is ~20 MB per request
-    const SKIP = /(image|tts|audio|live|embed|vision|robot|computer|learnlm|aqa|imagen|veo|gemma|native|nano|transcribe|customtools)/i;
+    const SKIP = /(image|tts|audio|live|embed|vision|robot|computer|learnlm|aqa|imagen|veo|gemma|native|nano|transcribe|customtools|argon|carbon|omni)/i;
 
     function parseRetryAfterMs(res, data, msg) {
         const hdr = res && res.headers && typeof res.headers.get === 'function' ? Number(res.headers.get('retry-after')) : 0;
@@ -120,21 +120,38 @@
         });
     }
 
+    function roundWaitMs(errs, round, quotaDelays, busyDelays, explicitQuota) {
+        const hasRetryable = errs.some(e => e.status === 429 || BUSY.includes(e.status));
+        const allDaily = errs.length > 0 && errs.every(e => e.status === 429 && e.isDailyQuota);
+        if (!hasRetryable || allDaily) return null;
+        const all5xx = !errs.some(e => e.status === 429);
+        if (all5xx) {
+            if (round >= busyDelays.length) return null;
+            return { ms: busyDelays[round], all5xx: true };
+        }
+        if (round >= quotaDelays.length) return null;
+        const hintMs = Math.max(0, ...errs.map(e => e.retryAfterMs || 0));
+        const ms = explicitQuota ? quotaDelays[round] : (hintMs > 0 ? Math.min(120000, Math.max(quotaDelays[round], hintMs + 2000)) : quotaDelays[round]);
+        return { ms, all5xx: false };
+    }
+
     /**
-     * analyze() with resilience: retry the same model while Google reports it is
-     * busy (5xx), fall back across models, and on 429 rate limits wait 1–2 min
-     * (in up to two ~60s cooldown rounds) before retrying.
+     * analyze() with resilience: optionally retry a busy model, fail over
+     * across backup models, retry transient all-5xx rounds quickly, and wait
+     * 1–2 min on 429 rate limits before retrying.
      */
     async function analyzeResilient(opts) {
         const { models, onStatus, signal } = opts;
-        const delays = opts.retryDelays || [2000, 5000];
+        const delays = Array.isArray(opts.retryDelays) ? opts.retryDelays : [2000, 5000];
         const quotaDelays = opts.quotaDelays || [60000, 60000];
+        const busyDelays = opts.busyDelays || quotaDelays;
         const rawOrder = (opts.model ? [opts.model] : []).concat((models || []).filter(m => m && m !== opts.model));
         const order = (rawOrder.length ? rawOrder : ['']).slice(0, opts.maxModels || 6);
 
         async function tryModelsOnce() {
             const errors = [];
-            for (const model of order) {
+            for (let idx = 0; idx < order.length; idx++) {
+                const model = order[idx];
                 let lastErr;
                 for (let attempt = 0; attempt <= delays.length; attempt++) {
                     if (signal && signal.aborted) throw abortError();
@@ -154,7 +171,8 @@
                 }
                 if (lastErr.noRetry || !(BUSY.includes(lastErr.status) || lastErr.status === 429 || lastErr.status === 404)) throw lastErr;
                 errors.push(lastErr);
-                if (onStatus && model !== order[order.length - 1]) onStatus(`${model} ishlamadi — boshqa modelga o'tilmoqda...`);
+                const next = order[idx + 1];
+                if (onStatus && next) onStatus(`${model} band — boshqa modelga o'tilmoqda (${next})...`);
             }
             return { errors, lastErr: errors[errors.length - 1] };
         }
@@ -162,16 +180,14 @@
         let res = await tryModelsOnce();
         if (res.hit) return res.hit;
 
-        for (let q = 0; q < quotaDelays.length; q++) {
-            const errs = res.errors;
-            const hasRetryable = errs.some(e => e.status === 429 || BUSY.includes(e.status));
-            const allDaily = errs.length > 0 && errs.every(e => e.status === 429 && e.isDailyQuota);
-            if (!hasRetryable || allDaily) break;
-
-            const hintMs = Math.max(0, ...errs.map(e => e.retryAfterMs || 0));
-            const waitMs = opts.quotaDelays ? quotaDelays[q] : (hintMs > 0 ? Math.min(120000, Math.max(quotaDelays[q], hintMs + 2000)) : quotaDelays[q]);
-            await waitWithCountdown(waitMs, sec => {
-                if (onStatus) onStatus(`Bepul limit (429) — ${sec} s dan keyin avtomatik qayta uriniladi...`);
+        const maxRounds = Math.max(quotaDelays.length, busyDelays.length);
+        for (let q = 0; q < maxRounds; q++) {
+            const wait = roundWaitMs(res.errors, q, quotaDelays, busyDelays, Boolean(opts.quotaDelays));
+            if (!wait) break;
+            await waitWithCountdown(wait.ms, sec => {
+                if (onStatus) onStatus(wait.all5xx
+                    ? `Serverlar hozir band — ${sec} s dan keyin qayta uriniladi...`
+                    : `Bepul limit (429) — ${sec} s dan keyin avtomatik qayta uriniladi...`);
             }, signal);
 
             if (onStatus) onStatus(`Qayta urinilmoqda (${order[0]})...`);
@@ -190,7 +206,7 @@
     /** Models that can read an image and write text, best first (newest Flash, then the rest). */
     function rankModels(models) {
         const usable = (models || []).filter(m =>
-            /gemini/i.test(m.name) && !SKIP.test(m.name) &&
+            /gemini/i.test(m.name) && /(flash|lite|pro)/i.test(m.name) && !SKIP.test(m.name) &&
             (m.supportedGenerationMethods || []).includes('generateContent'));
         const score = m => {
             const n = m.name.toLowerCase();
