@@ -606,7 +606,7 @@
 
     function pickDrawing(file) {
         if (!file) return;
-        const ok = /^image\/(png|jpeg|webp|gif)$/.test(file.type) || file.type === 'application/pdf';
+        const ok = /^image\/(png|jpeg|webp|gif)$/.test(file.type) || file.type === 'application/pdf' || /\.(png|jpe?g|webp|gif|pdf)$/i.test(file.name || '');
         if (!ok) { toast('Faqat PNG, JPEG, WEBP, GIF yoki PDF chizma', true); return; }
         state.drawingFile = file;
         $('drawing-file-name').textContent = '📄 ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)';
@@ -802,7 +802,7 @@
 
     async function analyzeDrawing() {
         if (!state.drawingFile || !state.api) return;
-        busy(true, 'Sun'iy intellekt chizmani tahlil qilmoqda... (o'lchamlar va proyeksiyalar o'qilmoqda)');
+        busy(true, "Sun'iy intellekt chizmani tahlil qilmoqda... (o'lchamlar va proyeksiyalar o'qilmoqda)");
         try {
             const note = $('drawing-note').value.trim();
             const headers = { 'Content-Type': state.drawingFile.type };
@@ -814,7 +814,7 @@
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || res.statusText);
             useDrawing(data, []);
-            toast('Sun'iy intellekt muvaffaqiyatli 3D model yaratdi!');
+            toast("Sun'iy intellekt muvaffaqiyatli 3D model yaratdi!");
         } catch (err) {
             console.error(err);
             toast('Chizma tahlili: ' + err.message, true);
@@ -1004,7 +1004,8 @@
 
         $('btn-repair').addEventListener('click', repair);
 
-        const dz = $('drawing-zone'), di = $('drawing-input');
+        const dz = $('drawing-zone'), di = $('drawing-input'), bpd = $('btn-pick-drawing');
+        if (bpd) bpd.addEventListener('click', e => { e.stopPropagation(); di.click(); });
         dz.addEventListener('click', () => di.click());
         di.addEventListener('change', () => { pickDrawing(di.files[0]); di.value = ''; });
         dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });

@@ -20,7 +20,7 @@ try:
 except ImportError:  # optional dependency
     anthropic = None
 
-MODEL = os.environ.get("AICAD_MODEL", "claude-3-7-sonnet-20250219")
+MODEL = os.environ.get("AICAD_MODEL", "claude-opus-5-5")
 MAX_BYTES = 20 * 1024 * 1024
 IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
@@ -159,12 +159,12 @@ def to_spec(result: dict[str, Any]) -> dict[str, Any]:
     return {"kind": "extrude", "name": name, "axis": "y", "depth": thickness, "outline": outline, "holes": holes}
 
 
-def analyze(data: bytes, media_type: str, note: str = "", client: Any = None, api_key: Any = None) -> dict[str, Any]:
+def analyze(data: bytes, media_type: str, note: str = "", client: Any = None) -> dict[str, Any]:
     """Send the drawing to Claude and return {"spec": ..., "analysis": ...}."""
     if client is None:
         if anthropic is None:
             raise DrawingError("Serverda `anthropic` paketi o'rnatilmagan (pip install anthropic)")
-        key = api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
         if not key:
             raise DrawingError("AI tahlil kaliti topilmadi. Iltimos, API kalitini kiriting yoki .env fayliga yozing.")
         client = anthropic.Anthropic(api_key=str(key).strip())
@@ -173,32 +173,41 @@ def analyze(data: bytes, media_type: str, note: str = "", client: Any = None, ap
     if note.strip():
         prompt += "\n\nNote from the user about the drawing:\n" + note.strip()[:2000]
 
-    candidate_models = [
-        MODEL,
-        "claude-3-7-sonnet-20250219",
-        "claude-3-5-sonnet-20241022",
-        "claude-3-5-sonnet-latest"
-    ]
-    seen = set()
-    models = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
-
-    last_error = None
     message = None
-    for m in models:
-        try:
+    try:
+        if hasattr(client, "beta") and hasattr(client.beta, "messages"):
+            with client.beta.messages.stream(
+                model=MODEL,
+                max_tokens=64000,
+                betas=["server-side-fallback-2026-07-01"],
+                fallbacks="default",
+                thinking={"type": "adaptive"},
+                output_config={"effort": "high", "format": {"type": "json_schema", "schema": SCHEMA}},
+                system=SYSTEM,
+                messages=[{"role": "user", "content": [_content_block(data, media_type), {"type": "text", "text": prompt}]}],
+            ) as stream:
+                message = stream.get_final_message()
+        elif hasattr(client, "messages"):
             message = client.messages.create(
-                model=m,
+                model=MODEL,
                 max_tokens=8192,
                 system=SYSTEM + "\n\nCRITICAL: Respond ONLY with a valid JSON object matching the requested schema. Do not include markdown codeblocks or preamble.",
                 messages=[{"role": "user", "content": [_content_block(data, media_type), {"type": "text", "text": prompt}]}],
             )
-            break
-        except Exception as err:
-            last_error = err
-            continue
-
-    if message is None:
-        raise DrawingError(f"AI chaqiruvida xatolik: {last_error}")
+    except Exception as err:
+        # Fallback to standard messages API if beta/stream fails
+        if hasattr(client, "messages"):
+            try:
+                message = client.messages.create(
+                    model="claude-3-7-sonnet-20250219",
+                    max_tokens=8192,
+                    system=SYSTEM + "\n\nCRITICAL: Respond ONLY with a valid JSON object matching the requested schema. Do not include markdown codeblocks or preamble.",
+                    messages=[{"role": "user", "content": [_content_block(data, media_type), {"type": "text", "text": prompt}]}],
+                )
+            except Exception:
+                raise DrawingError(f"AI chaqiruvida xatolik: {err}")
+        else:
+            raise DrawingError(f"AI chaqiruvida xatolik: {err}")
 
     if getattr(message, "stop_reason", None) == "refusal":
         raise DrawingError("Model bu so'rovni rad etdi")
