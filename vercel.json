@@ -3,6 +3,9 @@
   "functions": {
     "api/gemini.js": {
       "maxDuration": 60
+    },
+    "api/drawing/analyze.js": {
+      "maxDuration": 60
     }
   }
 }
