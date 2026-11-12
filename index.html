@@ -46,9 +46,9 @@
                         <span class="tooltip-badge">AI</span>
                     </div>
                     <div class="tabs" role="tablist">
-                        <button class="tab active" data-mode="gemini" role="tab">Gemini (avtomatik)</button>
+                        <button class="tab active" data-mode="api" role="tab" id="tab-server"><i class="fa-solid fa-brain"></i> AI Neyron Tahlili (Yuqori aniqlik)</button>
+                        <button class="tab" data-mode="gemini" role="tab"><i class="fa-solid fa-wand-magic-sparkles"></i> AI Vision (Tezkor)</button>
                         <button class="tab" data-mode="free" role="tab">Qo'lda (chat)</button>
-                        <button class="tab hidden" data-mode="api" role="tab" id="tab-server">Server</button>
                     </div>
                     <p class="hint">O'lchamli chizmangiz bo'lsa — shu bo'limdan foydalaning.</p>
                     <textarea class="note-input" id="drawing-note" rows="2" placeholder="Izoh (ixtiyoriy): masalan, &quot;4 ta teshik Ø10, qalinligi 8 mm&quot;"></textarea>
@@ -65,9 +65,22 @@
                     <p class="hint" id="drawing-file-name"></p>
                     </div>
 
-                    <div id="drawing-gemini-run">
+                    <div id="drawing-api">
+                        <div style="margin-bottom: 8px;">
+                            <label for="claude-api-key" style="font-size: 11px; color: #94a3b8; display: block; margin-bottom: 3px;">
+                                <i class="fa-solid fa-key"></i> AI Tizim Kaliti (API Key):
+                            </label>
+                            <input type="password" id="claude-api-key" class="note-input" placeholder="AI xavfsizlik kaliti (ixtiyoriy, server .env da bo'lsa bo'sh qoldiring)" style="font-family: monospace; font-size: 12px; margin-bottom: 2px;">
+                        </div>
+                        <button class="btn btn-success btn-block" id="btn-analyze-drawing" disabled>
+                            <i class="fa-solid fa-brain"></i> AI orqali 3D model yaratish
+                        </button>
+                        <p class="hint" id="drawing-status">Chizmani yuklang — Sun'iy intellekt neyrotarmog'i o'lcham va proyeksiyalarni o'qib, 3D model yaratadi.</p>
+                    </div>
+
+                    <div id="drawing-gemini-run" class="hidden">
                         <button class="btn btn-success btn-block" id="btn-gemini" disabled>
-                            <i class="fa-solid fa-wand-magic-sparkles"></i> Gemini bilan 3D yasash
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> AI Vision bilan 3D yasash
                         </button>
                         <p class="hint" id="gemini-status">Chizmani (PNG, JPEG, WEBP yoki PDF) yuklang — AI avtomatik 3D model yaratadi.</p>
                     </div>
@@ -76,9 +89,9 @@
                         <ol class="steps">
                             <li><button class="btn btn-secondary btn-sm" id="btn-copy-prompt"><i class="fa-solid fa-copy"></i> Promptni nusxalash</button></li>
                             <li><span class="link-row">
-                                <a class="btn btn-secondary btn-sm" href="https://gemini.google.com/app" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square"></i> Gemini</a>
-                                <a class="btn btn-secondary btn-sm" href="https://claude.ai/new" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square"></i> Claude</a></span>
-                                <span class="step-text">chatni oching, chizmani yuklang, promptni qo'ying va yuboring (Gemini'da Pro modelni tanlang)</span></li>
+                                
+                                </span>
+                                <span class="step-text">chatni oching, chizmani yuklang, promptni qo'ying va yuboring </span></li>
                             <li><span class="step-text">Javobni (JSON) shu yerga qo'ying:</span></li>
                         </ol>
                         <textarea class="note-input answer-input" id="drawing-answer" rows="5" spellcheck="false" placeholder='```json&#10;{ "part_name": "...", "kind": "csg", "features": [...] }&#10;```'></textarea>
@@ -86,13 +99,6 @@
                             <i class="fa-solid fa-cube"></i> 3D modelni yasash
                         </button>
                         <textarea class="hidden" id="prompt-fallback" readonly></textarea>
-                    </div>
-
-                    <div id="drawing-api" class="hidden">
-                    <button class="btn btn-success btn-block" id="btn-analyze-drawing" disabled>
-                        <i class="fa-solid fa-microchip"></i> Server orqali tahlil qilish (Claude API)
-                    </button>
-                    <p class="hint" id="drawing-status">Server holati tekshirilmoqda...</p>
                     </div>
                     <div class="messages" id="drawing-messages"></div>
                     <div class="drawing-result hidden" id="drawing-result"></div>

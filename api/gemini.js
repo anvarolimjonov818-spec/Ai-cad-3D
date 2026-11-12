@@ -135,7 +135,7 @@ function createHandler(deps) {
         if (!apiKey) {
             return sendJson(res, 503, {
                 missingKey: true,
-                error: { message: "Serverda GEMINI_API_KEY o'rnatilmagan. Vercel Settings -> Environment Variables ga GEMINI_API_KEY qo'shing." }
+                error: { message: "Serverda AI_API_KEY sozlanmagan." }
             });
         }
 

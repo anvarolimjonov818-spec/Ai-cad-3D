@@ -586,12 +586,19 @@
         $('export-step').classList.toggle('disabled', !(state.api && state.api.step));
         $('btn-server-check').disabled = !state.api;
         const drawingReady = !!(state.api && state.api.drawing);
-        $('btn-analyze-drawing').disabled = !(drawingReady && state.drawingFile);
-        $('drawing-status').textContent = !state.api
-            ? "Chizma tahlili uchun server kerak: ANTHROPIC_API_KEY bilan `python backend/main.py` ni ishga tushiring."
-            : drawingReady ? "Chizma Claude'ga (Anthropic API) yuboriladi va tahlil qilinadi."
-            : "Serverda ANTHROPIC_API_KEY o'rnatilmagan — chizma tahlili o'chirilgan.";
-        $('tab-server').classList.toggle('hidden', !drawingReady);
+        const claudeInput = $('claude-api-key');
+        if (claudeInput) {
+            claudeInput.value = localStorage.getItem('aicad.claude.key') || '';
+            claudeInput.addEventListener('input', e => {
+                localStorage.setItem('aicad.claude.key', e.target.value.trim());
+                $('btn-analyze-drawing').disabled = !state.drawingFile;
+            });
+        }
+        $('btn-analyze-drawing').disabled = !state.drawingFile;
+        $('drawing-status').textContent = drawingReady
+            ? "Chizma AI neyron tahliliga yuboriladi va yuqori aniqlikda 3D model yaratiladi."
+            : "Chizma tahlili uchun serverni ishga tushiring.";
+        if ($('tab-server')) $('tab-server').classList.remove('hidden');
         initGemini();
     }
 
@@ -603,7 +610,7 @@
         if (!ok) { toast('Faqat PNG, JPEG, WEBP, GIF yoki PDF chizma', true); return; }
         state.drawingFile = file;
         $('drawing-file-name').textContent = '📄 ' + file.name + ' (' + Math.round(file.size / 1024) + ' KB)';
-        $('btn-analyze-drawing').disabled = !(state.api && state.api.drawing);
+        $('btn-analyze-drawing').disabled = !state.drawingFile;
         updateGeminiButton();
     }
 
@@ -716,7 +723,7 @@
             const file = await window.CadGemini.readFile(f, { maxSide: 2048, minBytes: 1200 * 1024 });
             if (ctrl.signal.aborted) throw Object.assign(new Error('Tahlil bekor qilindi'), { name: 'AbortError' });
             if (file.resized) {
-                $('loading-step-text').textContent = `Gemini tahlil qilyapti... (${Math.round(file.origBytes / 1024)} KB → ${Math.round(file.sentBytes / 1024)} KB)`;
+                $('loading-step-text').textContent = `AI tahlil qilyapti... (${Math.round(file.origBytes / 1024)} KB → ${Math.round(file.sentBytes / 1024)} KB)`;
             }
             const { primary, fallback } = orderGeminiModels(srv.models);
             const prompt = D.buildPrompt(note);
@@ -785,7 +792,7 @@
             console.error(err);
             geminiCheckPromise = null;
             const msgs = [['error', err.message]];
-            if (text) msgs.push(['warn', "Gemini javobi \"Qo'lda (chat)\" yorlig'idagi maydonga qo'yildi — u yerda tuzatib, qayta yasashingiz mumkin."]);
+            if (text) msgs.push(['warn', "AI javobi \"Qo'lda (chat)\" yorlig'idagi maydonga qo'yildi — u yerda tuzatib, qayta yasashingiz mumkin."]);
             renderMessages($('drawing-messages'), msgs);
         } finally {
             geminiBusy = false;
@@ -794,16 +801,20 @@
     }
 
     async function analyzeDrawing() {
-        if (!state.drawingFile || !state.api || !state.api.drawing) return;
-        busy(true, 'Chizma tahlil qilinmoqda... (bir necha daqiqa olishi mumkin)');
+        if (!state.drawingFile || !state.api) return;
+        busy(true, 'Sun'iy intellekt chizmani tahlil qilmoqda... (o'lchamlar va proyeksiyalar o'qilmoqda)');
         try {
             const note = $('drawing-note').value.trim();
+            const headers = { 'Content-Type': state.drawingFile.type };
+            const claudeKey = ($('claude-api-key')?.value || '').trim() || localStorage.getItem('aicad.claude.key') || '';
+            if (claudeKey) headers['x-anthropic-key'] = claudeKey;
             const res = await fetch(state.api.base + '/api/drawing/analyze?note=' + encodeURIComponent(note), {
-                method: 'POST', headers: { 'Content-Type': state.drawingFile.type }, body: state.drawingFile
+                method: 'POST', headers, body: state.drawingFile
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || res.statusText);
             useDrawing(data, []);
+            toast('Sun'iy intellekt muvaffaqiyatli 3D model yaratdi!');
         } catch (err) {
             console.error(err);
             toast('Chizma tahlili: ' + err.message, true);

@@ -24,6 +24,11 @@ import gemini as geminilib  # noqa: E402
 import mesh as meshlib  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
+try:
+    import dotenv
+    dotenv.load_dotenv(ROOT / ".env")
+except Exception:
+    pass
 MAX_UPLOAD = 50 * 1024 * 1024
 MAX_DIM = 5000.0
 Point = tuple[float, float]
@@ -164,17 +169,20 @@ async def mesh_repair(request: Request):
 async def drawing_analyze(request: Request, note: str = ""):
     """Body: the drawing file (image or PDF); Content-Type must match it."""
     if not drawing.available():
-        raise HTTPException(503, "Chizma tahlili uchun serverda ANTHROPIC_API_KEY o'rnatilmagan")
+        raise HTTPException(503, "Chizma tahlili uchun serverda `anthropic` paketi o'rnatilmagan")
     body = await request.body()
     if not body:
         raise HTTPException(400, "Bo'sh so'rov: chizma faylini yuboring")
     media_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    api_key = request.headers.get("x-anthropic-key") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    if not api_key:
+        raise HTTPException(401, "AI API kaliti topilmadi. Iltimos, API kalitingizni kiriting yoki .env faylga yozing.")
     try:
-        result = await run_in_threadpool(drawing.analyze, body, media_type, note)
+        result = await run_in_threadpool(drawing.analyze, body, media_type, note, None, api_key)
     except drawing.DrawingError as e:
         raise HTTPException(422, str(e))
     except Exception as e:  # API/network failures
-        raise HTTPException(502, f"Claude API xatosi: {e}")
+        raise HTTPException(502, f"AI tahlil xatosi: {e}")
     try:  # make sure the spec is a valid Spec and really builds as a solid
         spec = Spec.model_validate(result["spec"]).model_dump(by_alias=True, exclude_none=True)
         if cad.available():
@@ -211,7 +219,7 @@ async def gemini_generate(request: Request):
         return JSONResponse(
             {
                 "missingKey": True,
-                "error": {"message": "Serverda GEMINI_API_KEY o'rnatilmagan."},
+                "error": {"message": "Serverda AI Vision kaliti o'rnatilmagan."},
             },
             status_code=503,
             headers={"Cache-Control": "no-store"},

@@ -20,7 +20,7 @@ try:
 except ImportError:  # optional dependency
     anthropic = None
 
-MODEL = os.environ.get("AICAD_MODEL", "claude-opus-5-5")
+MODEL = os.environ.get("AICAD_MODEL", "claude-3-7-sonnet-20250219")
 MAX_BYTES = 20 * 1024 * 1024
 IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
@@ -98,8 +98,7 @@ class DrawingError(Exception):
 
 
 def available() -> bool:
-    return anthropic is not None and bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
-
+    return anthropic is not None
 
 def _content_block(data: bytes, media_type: str) -> dict[str, Any]:
     if len(data) > MAX_BYTES:
@@ -160,41 +159,78 @@ def to_spec(result: dict[str, Any]) -> dict[str, Any]:
     return {"kind": "extrude", "name": name, "axis": "y", "depth": thickness, "outline": outline, "holes": holes}
 
 
-def analyze(data: bytes, media_type: str, note: str = "", client: Any = None) -> dict[str, Any]:
+def analyze(data: bytes, media_type: str, note: str = "", client: Any = None, api_key: Any = None) -> dict[str, Any]:
     """Send the drawing to Claude and return {"spec": ..., "analysis": ...}."""
     if client is None:
         if anthropic is None:
             raise DrawingError("Serverda `anthropic` paketi o'rnatilmagan (pip install anthropic)")
-        client = anthropic.Anthropic()
+        key = api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        if not key:
+            raise DrawingError("AI tahlil kaliti topilmadi. Iltimos, API kalitini kiriting yoki .env fayliga yozing.")
+        client = anthropic.Anthropic(api_key=str(key).strip())
 
     prompt = "Analyse this drawing and return the part model."
     if note.strip():
         prompt += "\n\nNote from the user about the drawing:\n" + note.strip()[:2000]
 
-    # The drawing is long input, so stream and collect the final message.
-    with client.beta.messages.stream(
-        model=MODEL,
-        max_tokens=64000,
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-        thinking={"type": "adaptive"},
-        output_config={"effort": "high", "format": {"type": "json_schema", "schema": SCHEMA}},
-        system=SYSTEM,
-        messages=[{"role": "user", "content": [_content_block(data, media_type), {"type": "text", "text": prompt}]}],
-    ) as stream:
-        message = stream.get_final_message()
+    candidate_models = [
+        MODEL,
+        "claude-3-7-sonnet-20250219",
+        "claude-3-5-sonnet-20241022",
+        "claude-3-5-sonnet-latest"
+    ]
+    seen = set()
+    models = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
 
-    if message.stop_reason == "refusal":
+    last_error = None
+    message = None
+    for m in models:
+        try:
+            message = client.messages.create(
+                model=m,
+                max_tokens=8192,
+                system=SYSTEM + "\n\nCRITICAL: Respond ONLY with a valid JSON object matching the requested schema. Do not include markdown codeblocks or preamble.",
+                messages=[{"role": "user", "content": [_content_block(data, media_type), {"type": "text", "text": prompt}]}],
+            )
+            break
+        except Exception as err:
+            last_error = err
+            continue
+
+    if message is None:
+        raise DrawingError(f"AI chaqiruvida xatolik: {last_error}")
+
+    if getattr(message, "stop_reason", None) == "refusal":
         raise DrawingError("Model bu so'rovni rad etdi")
-    if message.stop_reason == "max_tokens":
+    if getattr(message, "stop_reason", None) == "max_tokens":
         raise DrawingError("Javob juda uzun bo'lib, kesilib qoldi — soddaroq chizma yuboring")
-    text = next((b.text for b in message.content if b.type == "text"), None)
+
+    text = ""
+    for block in message.content:
+        if getattr(block, "type", "") == "text":
+            text += block.text
+
     if not text:
         raise DrawingError("Modeldan javob kelmadi")
+
+    cleaned = text.strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1:
+        cleaned = cleaned[start:end+1]
+
     try:
-        result = json.loads(text)
+        result = json.loads(cleaned)
     except json.JSONDecodeError as e:
-        raise DrawingError(f"Model javobi JSON emas: {e}")
+        raise DrawingError(f"Model javobi yaroqli JSON emas: {e}\nMatn: {cleaned[:300]}")
 
     return {"spec": to_spec(result), "analysis": {
         "part_name": result.get("part_name"),

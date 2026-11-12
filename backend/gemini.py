@@ -102,7 +102,7 @@ async def list_models(
                 break
     ranked = rank_models(all_models)
     if not ranked:
-        raise ProxyRequestError(502, "Chizma o'qiy oladigan Gemini modeli topilmadi")
+        raise ProxyRequestError(502, "Chizma tahlili uchun mos AI modeli topilmadi")
     return ranked
 
 
