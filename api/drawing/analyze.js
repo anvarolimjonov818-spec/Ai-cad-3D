@@ -13,9 +13,9 @@ const ALLOWED_MIME = new Set([
 const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
 
 const CANDIDATE_MODELS = [
-    'claude-3-7-sonnet-20250219',
-    'claude-3-5-sonnet-20241022',
-    'claude-3-5-sonnet-latest'
+    'claude-opus-5-5',
+    'claude-sonnet-5-5',
+    'claude-sonnet-4-6'
 ];
 
 async function readRawBody(req) {
@@ -111,22 +111,23 @@ module.exports = async function handler(req, res) {
                     })
                 });
 
-                const data = await apiRes.json();
+                const data = await apiRes.json().catch(() => ({}));
                 if (!apiRes.ok) {
-                    const msg = (data && data.error && data.error.message) || apiRes.statusText;
-                    if (apiRes.status === 400 && msg.includes('credit balance is too low')) {
-                        throw new Error("AI hisobingizda balans kam. Iltimos, hisobingizni to'ldiring.");
+                    const msg = (data && data.error && data.error.message) || apiRes.statusText || ('HTTP ' + apiRes.status);
+                    if (apiRes.status === 401 || /invalid.*api[-_ ]?key|authentication/i.test(msg)) {
+                        throw Object.assign(new Error("AI API kaliti noto'g'ri yoki amal qilmayapti. Kalitni tekshirib qayta kiriting."), { status: 401, fatal: true });
                     }
-                    throw new Error(msg);
+                    if (apiRes.status === 400 && /credit balance is too low/i.test(msg)) {
+                        throw Object.assign(new Error("AI hisobingizda balans kam. Iltimos, hisobingizni to'ldiring."), { status: 402, fatal: true });
+                    }
+                    throw Object.assign(new Error(msg), { status: apiRes.status });
                 }
 
                 responseJson = data;
                 break;
             } catch (err) {
                 lastError = err;
-                if (err.message && err.message.includes('balans kam')) {
-                    break;
-                }
+                if (err.fatal) break;
             }
         }
 
@@ -152,7 +153,7 @@ module.exports = async function handler(req, res) {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify(parsed));
     } catch (err) {
-        res.statusCode = 500;
+        res.statusCode = (err && err.status >= 400 && err.status < 600) ? err.status : 500;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ detail: err.message || "Tahlil jarayonida kutilmagan xatolik yuz berdi" }));
     }

@@ -174,23 +174,14 @@ async def drawing_analyze(request: Request, note: str = ""):
     if not body:
         raise HTTPException(400, "Bo'sh so'rov: chizma faylini yuboring")
     media_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
-    api_key = request.headers.get("x-anthropic-key") or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-    if not api_key:
-        raise HTTPException(401, "AI API kaliti topilmadi. Iltimos, API kalitingizni kiriting yoki .env faylga yozing.")
-    custom_key = request.headers.get("x-anthropic-key")
+    custom_key = (request.headers.get("x-anthropic-key") or "").strip()
     try:
         if custom_key:
-            old_key = os.environ.get("ANTHROPIC_API_KEY")
-            try:
-                os.environ["ANTHROPIC_API_KEY"] = custom_key
-                result = await run_in_threadpool(drawing.analyze, body, media_type, note)
-            finally:
-                if old_key is not None:
-                    os.environ["ANTHROPIC_API_KEY"] = old_key
-                else:
-                    os.environ.pop("ANTHROPIC_API_KEY", None)
+            result = await run_in_threadpool(drawing.analyze, body, media_type, note, None, custom_key)
         else:
             result = await run_in_threadpool(drawing.analyze, body, media_type, note)
+    except drawing.DrawingAuthError as e:
+        raise HTTPException(401, str(e))
     except drawing.DrawingError as e:
         raise HTTPException(422, str(e))
     except Exception as e:  # API/network failures

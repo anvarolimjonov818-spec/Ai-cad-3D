@@ -813,7 +813,7 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.detail || res.statusText);
-            useDrawing(data, []);
+            useDrawing(data, data.warnings || []);
             toast("Sun'iy intellekt muvaffaqiyatli 3D model yaratdi!");
         } catch (err) {
             console.error(err);

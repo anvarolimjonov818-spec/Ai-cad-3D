@@ -97,6 +97,10 @@ class DrawingError(Exception):
     """A user-facing problem with the drawing or the model response."""
 
 
+class DrawingAuthError(DrawingError):
+    """Missing or invalid Anthropic API credentials."""
+
+
 def available() -> bool:
     return anthropic is not None
 
@@ -159,14 +163,14 @@ def to_spec(result: dict[str, Any]) -> dict[str, Any]:
     return {"kind": "extrude", "name": name, "axis": "y", "depth": thickness, "outline": outline, "holes": holes}
 
 
-def analyze(data: bytes, media_type: str, note: str = "", client: Any = None) -> dict[str, Any]:
+def analyze(data: bytes, media_type: str, note: str = "", client: Any = None, api_key: str = "") -> dict[str, Any]:
     """Send the drawing to Claude and return {"spec": ..., "analysis": ...}."""
     if client is None:
         if anthropic is None:
             raise DrawingError("Serverda `anthropic` paketi o'rnatilmagan (pip install anthropic)")
-        key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        key = str(api_key or "").strip() or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
         if not key:
-            raise DrawingError("AI tahlil kaliti topilmadi. Iltimos, API kalitini kiriting yoki .env fayliga yozing.")
+            raise DrawingAuthError("AI tahlil kaliti topilmadi. Iltimos, API kalitini kiriting yoki .env fayliga yozing.")
         client = anthropic.Anthropic(api_key=str(key).strip())
 
     prompt = "Analyse this drawing and return the part model."
@@ -199,7 +203,7 @@ def analyze(data: bytes, media_type: str, note: str = "", client: Any = None) ->
         if hasattr(client, "messages"):
             try:
                 message = client.messages.create(
-                    model="claude-3-7-sonnet-20250219",
+                    model="claude-sonnet-5-5",
                     max_tokens=8192,
                     system=SYSTEM + "\n\nCRITICAL: Respond ONLY with a valid JSON object matching the requested schema. Do not include markdown codeblocks or preamble.",
                     messages=[{"role": "user", "content": [_content_block(data, media_type), {"type": "text", "text": prompt}]}],
