@@ -23,12 +23,25 @@ import drawing  # noqa: E402
 import gemini as geminilib  # noqa: E402
 import mesh as meshlib  # noqa: E402
 
+def _load_env_file(path: Path) -> None:
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip()
+        if k:
+            os.environ.setdefault(k, v.strip().strip('"').strip("'"))
+
+
 ROOT = Path(__file__).resolve().parent.parent
 try:
     import dotenv
     dotenv.load_dotenv(ROOT / ".env")
 except Exception:
-    pass
+    _load_env_file(ROOT / ".env")
 MAX_UPLOAD = 50 * 1024 * 1024
 MAX_DIM = 5000.0
 Point = tuple[float, float]
@@ -118,7 +131,8 @@ class Spec(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "step": cad.available(), "drawing": drawing.available(), "version": app.version}
+    has_key = bool((os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN") or "").strip())
+    return {"ok": True, "step": cad.available(), "drawing": drawing.available(), "hasKey": has_key, "version": app.version}
 
 
 @app.post("/api/export/step")

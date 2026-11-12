@@ -8,6 +8,7 @@ module.exports = function handler(req, res) {
         ok: true,
         step: false,
         drawing: true,
+        hasKey: !!String(process.env.ANTHROPIC_API_KEY || '').trim(),
         version: "2.0.0"
     }));
 };

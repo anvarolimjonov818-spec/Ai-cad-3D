@@ -574,7 +574,7 @@
                 const res = await fetch(base.replace(/\/$/, '') + '/api/health', { cache: 'no-store' });
                 if (res.ok) {
                     const info = await res.json();
-                    state.api = { base: base.replace(/\/$/, ''), step: !!info.step, drawing: !!info.drawing };
+                    state.api = { base: base.replace(/\/$/, ''), step: !!info.step, drawing: !!info.drawing, hasKey: !!info.hasKey };
                     break;
                 }
             } catch (e) { /* not available */ }
@@ -586,9 +586,12 @@
         $('export-step').classList.toggle('disabled', !(state.api && state.api.step));
         $('btn-server-check').disabled = !state.api;
         const drawingReady = !!(state.api && state.api.drawing);
+        const hasServerKey = !!(state.api && state.api.hasKey);
+        const claudeWrap = $('claude-key-wrap');
+        if (claudeWrap) claudeWrap.classList.toggle('hidden', hasServerKey);
         const claudeInput = $('claude-api-key');
         if (claudeInput) {
-            claudeInput.value = localStorage.getItem('aicad.claude.key') || '';
+            claudeInput.value = hasServerKey ? '' : (localStorage.getItem('aicad.claude.key') || '');
             claudeInput.addEventListener('input', e => {
                 localStorage.setItem('aicad.claude.key', e.target.value.trim());
                 $('btn-analyze-drawing').disabled = !state.drawingFile;
@@ -806,7 +809,9 @@
         try {
             const note = $('drawing-note').value.trim();
             const headers = { 'Content-Type': state.drawingFile.type };
-            const claudeKey = ($('claude-api-key')?.value || '').trim() || localStorage.getItem('aicad.claude.key') || '';
+            const claudeKey = !(state.api && state.api.hasKey)
+                ? (($('claude-api-key')?.value || '').trim() || localStorage.getItem('aicad.claude.key') || '')
+                : '';
             if (claudeKey) headers['x-anthropic-key'] = claudeKey;
             const res = await fetch(state.api.base + '/api/drawing/analyze?note=' + encodeURIComponent(note), {
                 method: 'POST', headers, body: state.drawingFile
