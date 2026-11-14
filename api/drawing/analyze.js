@@ -88,28 +88,56 @@ module.exports = async function handler(req, res) {
 
         for (const model of CANDIDATE_MODELS) {
             try {
-                const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
+                const is37 = model.includes('3-7-sonnet');
+                const reqPayload = {
+                    model,
+                    max_tokens: is37 ? 16000 : 8192,
+                    system: systemPrompt,
+                    messages: [
+                        {
+                            role: 'user',
+                            content: [
+                                contentBlock,
+                                { type: 'text', text: prompt }
+                            ]
+                        }
+                    ]
+                };
+                if (is37) {
+                    reqPayload.thinking = {
+                        type: 'enabled',
+                        budget_tokens: 4096
+                    };
+                }
+
+                let apiRes = await fetch('https://api.anthropic.com/v1/messages', {
                     method: 'POST',
                     headers: {
                         'x-api-key': apiKey,
                         'anthropic-version': '2023-06-01',
                         'content-type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        model,
-                        max_tokens: 8192,
-                        system: systemPrompt,
-                        messages: [
-                            {
-                                role: 'user',
-                                content: [
-                                    contentBlock,
-                                    { type: 'text', text: prompt }
-                                ]
-                            }
-                        ]
-                    })
+                    body: JSON.stringify(reqPayload)
                 });
+
+                // If thinking was rejected, retry immediately without thinking parameter
+                if (!apiRes.ok && is37) {
+                    const errData = await apiRes.clone().json().catch(() => null);
+                    const msg = (errData && errData.error && errData.error.message) || '';
+                    if (msg.includes('thinking') || msg.includes('budget') || apiRes.status === 400) {
+                        delete reqPayload.thinking;
+                        reqPayload.max_tokens = 8192;
+                        apiRes = await fetch('https://api.anthropic.com/v1/messages', {
+                            method: 'POST',
+                            headers: {
+                                'x-api-key': apiKey,
+                                'anthropic-version': '2023-06-01',
+                                'content-type': 'application/json'
+                            },
+                            body: JSON.stringify(reqPayload)
+                        });
+                    }
+                }
 
                 const data = await apiRes.json().catch(() => ({}));
                 if (!apiRes.ok) {

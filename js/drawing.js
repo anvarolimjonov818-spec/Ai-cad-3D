@@ -16,45 +16,84 @@
     const MAX_POINTS = 4000;
 
     // Single source of truth for the drawing prompt (backend/drawing.py reads it from here).
-    const PROMPT = `You are reading a mechanical engineering drawing (ESKD/GOST, ISO or ANSI; orthographic views, sections, maybe an isometric) that I attached. Build the part as a solid model for my CAD app, which assembles the part from simple features.
+    const PROMPT = `You are an expert CAD engineer and mechanical drawing reader (ESKD / GOST, ISO, ANSI standards).
+Your job is to read EVERY view (Front, Top, Side, Sections) and all dimension annotations on the attached mechanical engineering drawing, then construct an EXACT, watertight 3D solid model as a sequence of CSG features for a CAD application.
 
 COORDINATES (millimetres):
-- X = left-right in the main (front) view, Y = depth (the vertical direction of the top view, +Y = towards the back), Z = height (up in the front view).
-- Origin: the centre of the part's footprint (or its main axis), Z = 0 on the bottom face.
+- X = left-right in the front view (+X right, -X left). Centered at X = 0 for symmetric parts.
+- Y = depth / front-to-back in the top view (+Y towards back, -Y towards front). Centered at Y = 0 for symmetric parts.
+- Z = height / vertical in the front view (+Z upwards). Z = 0 is ALWAYS the flat bottom seating face of the base plate.
 
-FEATURES are applied in order, starting from nothing: "add" = union, "cut" = subtract. The first feature must be "add".
-Every feature extends along "axis" ("z" vertical, "x" or "y" horizontal) from "from" to "to" (absolute coordinates on that axis).
-Points [u, v] lie in the plane perpendicular to the axis: axis "z" -> [x, y], axis "x" -> [y, z], axis "y" -> [x, z].
-- "prism": "outline" = closed polygon [[u, v], ...], no self-crossing. Approximate arcs and fillets with enough points.
+FEATURES (applied in sequential order starting from empty space: "add" = union, "cut" = subtract):
+The first feature MUST be an "add" (the main base block).
+Every feature extends along "axis" ("z" vertical, "x" or "y" horizontal) from absolute coordinate "from" to "to".
+Points [u, v] lie in the plane perpendicular to the axis:
+- axis "z" -> [x, y]
+- axis "x" -> [y, z]
+- axis "y" -> [x, z]
+
+Allowed feature shapes:
+- "prism": "outline" = closed polygon [[u, v], ...], no self-crossing.
 - "cylinder": "center" [u, v], "diameter".
-- "regular_prism": regular polygon with "sides", "diameter" = circumscribed (across corners), "rotation_deg" = angle of the first corner from +u, "center".
-  A hexagon given across flats S has diameter S / cos(30°). A square □a has diameter a·√2 (rotation 45 = sides parallel to the axes, 0 = diamond).
-- "hull": convex hull of "circles" [{"center": [u, v], "diameter": d}, ...] - wrench arms, links, slots, lugs with rounded ends.
-- "revolve": vertical body of rotation: "profile" = closed half-section [[radius, z], ...] (radius >= 0), around a vertical axis at "center" [x, y]. Use for shafts, grooves, tapers, stepped bores.
+- "regular_prism": regular polygon with "sides", circumscribed "diameter", "rotation_deg", "center" [u, v].
+- "hull": convex hull of "circles" [{"center": [u, v], "diameter": d}, ...].
+- "revolve": vertical body of rotation: "profile" = closed half-section [[radius, z], ...] (radius >= 0), around vertical axis at "center" [x, y].
 
-HOW TO WORK:
-1. Read EVERY view together: Front view gives (X, Z) width and height; Top view gives (X, Y) width and depth; Left/Side view gives (Y, Z) depth and height. If an isometric/3D view is present, make sure every wall, boss, rib, lug, slot, chamfer and hole in it is included.
-2. Build the ENTIRE 3D volume from Z = 0 up to the full height H, not just the bottom base plate. Overlap adjacent "add" features by ~0.1 mm where they touch so they union cleanly into ONE solid body.
-3. Use only dimensions written on the drawing; respect dimension chains, symmetry, Ø, R, □, S, "4x Ø10" / "4 отв.", chamfers "2x45°", and the scale.
-4. Through cuts go 1 mm beyond both outer faces; blind pockets, slots and recesses MUST stop at their own depth ("from".."to") and MUST NOT split the base into separate disconnected pieces unless the drawing literally shows two parts.
-5. Before writing JSON, double-check that the overall X (Length), Y (Width) and Z (Height) bounding box of your "add" features matches the drawing's main dimensions and every feature matches all views.
-6. If something is not dimensioned, estimate it carefully from proportions in the drawing, say so in "assumptions" and set "confidence" to "low". Threads are modelled as plain holes/shafts of the nominal diameter; list such simplifications in "assumptions".
-7. Write "part_name", "label" and "assumptions" in Uzbek (Latin script).
+CRITICAL ENGINEERING DRAWING RULES (GOST / ISO):
+1. SOLID CONTINUOUS LINES (Asosiy ko'rinadigan chiziqlar) vs DASHED LINES (Shtrix / ko'rinmaydigan chiziqlar):
+   - Solid lines represent visible exterior geometric contours.
+   - DASHED LINES (Штриховые линии / Shtrix-chiziqlar) ALWAYS represent HIDDEN INTERNAL VOIDS, HOLES, TUNNELS, SLOTS, OR UNDERCUTS!
+   - You MUST NOT IGNORE dashed lines! Every dashed line corresponds to an interior "cut" feature!
+   - Under-base tunnel rule: If the Front view shows a horizontal dashed line at height H_tunnel (e.g. 10 mm) and the Top view shows two dashed lines across width W_tunnel (e.g. 50 mm), this is an UNDER-BASE TUNNEL / SLOT cut through the bottom face from one end to the other! Model it as an "op": "cut" prism along axis "x" from -length/2-1 to length/2+1 with outline [[-W/2, -1], [W/2, -1], [W/2, H], [-W/2, H]].
+   - Vertical dashed lines inside a boss or cylinder indicate an internal hole/bore extending downwards into the part.
 
-ANSWER: first a few short lines describing the part, then ONE JSON code block exactly in this shape (omit fields a shape does not use):
+2. STIFFENING RIBS (Mustahkamlik qovurg'alari / Ребра жесткости) vs UPRIGHT WALLS:
+   - Do NOT turn the main upright walls into sloped troughs!
+   - An upright end wall extends across the FULL DEPTH of the part (e.g. from Y = -depth/2 to +depth/2) as a rectangular prism.
+   - A stiffening rib is a THIN TRIANGULAR WEB (e.g. thickness 10 mm, centered at Y = 0, from Y = -5 to +5) that braces the inner face of the upright wall down to the base!
+   - Model the full-depth upright wall first ("add" prism across full Y), then model the thin triangular rib as a separate "add" prism along axis "y" from -thickness/2 to +thickness/2 with triangular outline in the [X, Z] plane: [[x_wall, z_base], [x_toe, z_base], [x_wall, z_top]].
+
+3. CYLINDERS, HOLES, AND LATERAL WINDOWS:
+   - A cylinder boss is an "add" cylinder along axis "z" from base height up to its top height.
+   - A central hole through the cylinder is a "cut" prism or cylinder along axis "z" from -1 through to the bottom.
+   - A lateral through-window or cross-opening in the cylinder is a "cut" prism along axis "y" spanning from -diameter/2-1 to +diameter/2+1 at the specified Z window height.
+
+4. SYMMETRY & DASH-DOT CENTERLINES (O'q chiziqlari):
+   - Centerlines denote bilateral symmetry along X and/or Y. Ensure symmetric walls, ribs, and cutouts mirror symmetrically across the center axis.
+
+5. DIMENSION ACCOUNTING CHECKLIST:
+   - Every single dimension number visible on the drawing (e.g. 120, 100, 70, 64, 50, 28, 24, 20, 10) MUST be accounted for by the coordinates and dimensions of your features.
+   - Verify that outer bounds match: L (Length/X) x W (Width/Y) x H (Total Height/Z).
+
+6. Uzbek Language:
+   - Write "part_name", feature "label"s and "assumptions" in Uzbek (Latin script).
+
+ANSWER FORMAT:
+First a few lines of reasoning breaking down the projections and dimensions, followed by ONE JSON code block:
 
 \`\`\`json
 {
-  "part_name": "Silindrli blok",
+  "part_name": "Kronshteyn opora",
   "kind": "csg",
   "features": [
-    {"op": "add", "shape": "prism", "axis": "z", "from": 0, "to": 20, "outline": [[-40, -30], [40, -30], [40, 30], [-40, 30]], "label": "Asos 80x60x20"},
-    {"op": "add", "shape": "cylinder", "axis": "z", "from": 20, "to": 60, "center": [0, 0], "diameter": 44, "label": "Silindr Ø44"},
-    {"op": "cut", "shape": "cylinder", "axis": "z", "from": -1, "to": 61, "center": [0, 0], "diameter": 20, "label": "Teshik Ø20"},
-    {"op": "cut", "shape": "prism", "axis": "y", "from": -31, "to": 31, "outline": [[30, 21], [41, 21], [41, 10]], "label": "Qiya kesim"}
+    {"op": "add", "shape": "prism", "axis": "z", "from": 0, "to": 20, "outline": [[-60, -35], [60, -35], [60, 35], [-60, 35]], "label": "Asos 120x70x20"},
+    {"op": "cut", "shape": "prism", "axis": "x", "from": -61, "to": 61, "outline": [[-25, -1], [25, -1], [25, 10], [-25, 10]], "label": "Ostki tunnel 50x10"},
+    {"op": "add", "shape": "prism", "axis": "z", "from": 20, "to": 70, "outline": [[-60, -35], [-50, -35], [-50, 35], [-60, 35]], "label": "Chap tik devor 10x70x50"},
+    {"op": "add", "shape": "prism", "axis": "z", "from": 20, "to": 70, "outline": [[50, -35], [60, -35], [60, 35], [50, 35]], "label": "O'ng tik devor 10x70x50"},
+    {"op": "add", "shape": "prism", "axis": "y", "from": -5, "to": 5, "outline": [[-50, 20], [-32, 20], [-50, 70]], "label": "Chap qovurg'a 10 mm"},
+    {"op": "add", "shape": "prism", "axis": "y", "from": -5, "to": 5, "outline": [[50, 20], [32, 20], [50, 70]], "label": "O'ng qovurg'a 10 mm"},
+    {"op": "add", "shape": "cylinder", "axis": "z", "from": 20, "to": 60, "center": [0, 0], "diameter": 50, "label": "Markaziy silindr Ø50"},
+    {"op": "cut", "shape": "prism", "axis": "z", "from": -1, "to": 61, "outline": [[-12, -14], [12, -14], [12, 14], [-12, 14]], "label": "Markaziy teshik 24x28"},
+    {"op": "cut", "shape": "prism", "axis": "y", "from": -26, "to": 26, "outline": [[-12, 30], [12, 30], [12, 50], [-12, 50]], "label": "Silindr darchasi 24x20"}
   ],
-  "dimensions": [{"label": "Ø44", "value_mm": 44}],
-  "assumptions": ["Faskalar modelga kiritilmadi"],
+  "dimensions": [
+    {"label": "120", "value_mm": 120},
+    {"label": "70", "value_mm": 70},
+    {"label": "70", "value_mm": 70},
+    {"label": "50", "value_mm": 50},
+    {"label": "Ø50", "value_mm": 50}
+  ],
+  "assumptions": ["Barcha o'lchamlar va shtrix chiziqlar to'liq inobatga olindi"],
   "confidence": "high"
 }
 \`\`\``;
@@ -66,11 +105,11 @@ ANSWER: first a few short lines describing the part, then ONE JSON code block ex
 
     /** Pull the JSON object out of a chat answer (handles ```json fences and surrounding text). */
     function extractJSON(text) {
-        if (!text || !text.trim()) throw new Error("Claude javobi bo'sh — uni to'liq nusxalab qo'ying");
+        if (!text || !text.trim()) throw new Error("AI javobi bo'sh — uni to'liq nusxalab qo'ying");
         const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
         let body = fence ? fence[1] : text;
         const start = body.indexOf('{'), end = body.lastIndexOf('}');
-        if (start < 0 || end <= start) throw new Error("Javobda JSON topilmadi — Claude javobini to'liq nusxalang");
+        if (start < 0 || end <= start) throw new Error("Javobda JSON topilmadi — AI javobini to'liq nusxalang");
         body = body.slice(start, end + 1);
         try {
             return JSON.parse(body);
@@ -159,7 +198,7 @@ ANSWER: first a few short lines describing the part, then ONE JSON code block ex
             const profile = dedupe(toPoints(r.profile || [], 'profile'));
             if (profile.length < 3) throw new Error("Aylanma profilda kamida 3 ta nuqta bo'lishi kerak");
             if (profile.some(([rad]) => rad < -1e-9)) throw new Error("Profil radiusi manfiy bo'lishi mumkin emas");
-            if (selfIntersects(profile)) throw new Error("Profil o'zini kesib o'tadi — Claude'dan profilni qayta tekshirishni so'rang");
+            if (selfIntersects(profile)) throw new Error("Profil o'zini kesib o'tadi — AI'dan profilni qayta tekshirishni so'rang");
             if (Math.abs(signedArea(profile)) < 1e-3) throw new Error("Profil yuzasi nolga teng — kesim chizilmagan");
             spec = { kind: 'revolve', name, profile: profile.map(([a, b]) => [Math.max(0, a), b]) };
         } else if (kind === 'extrude') {
@@ -167,7 +206,7 @@ ANSWER: first a few short lines describing the part, then ONE JSON code block ex
             if (outline.length < 3) throw new Error("Plastina konturida kamida 3 ta nuqta bo'lishi kerak");
             const thickness = Number(r.thickness);
             if (!(thickness > 0) || thickness > MAX_COORD) throw new Error("Plastina qalinligi (thickness) musbat son bo'lishi kerak");
-            if (selfIntersects(outline)) throw new Error("Kontur o'zini kesib o'tadi — Claude'dan konturni qayta tekshirishni so'rang");
+            if (selfIntersects(outline)) throw new Error("Kontur o'zini kesib o'tadi — AI'dan konturni qayta tekshirishni so'rang");
             if (Math.abs(signedArea(outline)) < 1e-3) throw new Error("Kontur yuzasi nolga teng");
             if (signedArea(outline) < 0) outline = outline.slice().reverse();
             const holes = [];

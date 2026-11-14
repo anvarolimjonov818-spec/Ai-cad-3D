@@ -679,7 +679,7 @@
                     error: info.error || ''
                 };
                 if (!geminiServer.configured) {
-                    $('gemini-status').textContent = "Serverda GEMINI_API_KEY hali sozlanmagan (Vercel Environment Variables -> GEMINI_API_KEY).";
+                    $('gemini-status').textContent = "Serverda AI Vision kaliti sozlanmagan.";
                 } else if (geminiServer.error) {
                     $('gemini-status').textContent = geminiServer.error;
                 } else {
@@ -716,12 +716,12 @@
         updateGeminiButton();
         const ctrl = new AbortController();
         const t0 = performance.now();
-        busy(true, "Gemini chizmani o'qiyapti... (5–20 soniya)", () => ctrl.abort());
+        busy(true, "AI Vision chizmani tahlil qilmoqda... (5–20 soniya)", () => ctrl.abort());
         let text = '';
         try {
             const srv = await initGemini();
             if (srv.checked && !srv.configured) {
-                throw new Error("Serverda GEMINI_API_KEY o'rnatilmagan. Sayt egasi Vercel Settings -> Environment Variables ga GEMINI_API_KEY qo'shishi kerak.");
+                throw new Error("Serverda AI Vision kaliti sozlanmagan.");
             }
             const file = await window.CadGemini.readFile(f, { maxSide: 2048, minBytes: 1200 * 1024 });
             if (ctrl.signal.aborted) throw Object.assign(new Error('Tahlil bekor qilindi'), { name: 'AbortError' });

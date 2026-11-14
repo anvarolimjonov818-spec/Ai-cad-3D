@@ -192,12 +192,21 @@ def analyze(data: bytes, media_type: str, note: str = "", client: Any = None, ap
             ) as stream:
                 message = stream.get_final_message()
         elif hasattr(client, "messages"):
-            message = client.messages.create(
-                model=MODEL,
-                max_tokens=8192,
-                system=SYSTEM + "\n\nCRITICAL: Respond ONLY with a valid JSON object matching the requested schema. Do not include markdown codeblocks or preamble.",
-                messages=[{"role": "user", "content": [_content_block(data, media_type), {"type": "text", "text": prompt}]}],
-            )
+            try:
+                message = client.messages.create(
+                    model=MODEL,
+                    max_tokens=16000,
+                    thinking={"type": "enabled", "budget_tokens": 4096},
+                    system=SYSTEM + "\n\nCRITICAL: Respond ONLY with a valid JSON object matching the requested schema. Do not include markdown codeblocks or preamble.",
+                    messages=[{"role": "user", "content": [_content_block(data, media_type), {"type": "text", "text": prompt}]}],
+                )
+            except Exception:
+                message = client.messages.create(
+                    model=MODEL,
+                    max_tokens=8192,
+                    system=SYSTEM + "\n\nCRITICAL: Respond ONLY with a valid JSON object matching the requested schema. Do not include markdown codeblocks or preamble.",
+                    messages=[{"role": "user", "content": [_content_block(data, media_type), {"type": "text", "text": prompt}]}],
+                )
     except Exception as err:
         # Fallback to standard messages API if beta/stream fails
         if hasattr(client, "messages"):
